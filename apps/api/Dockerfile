@@ -5,7 +5,12 @@ RUN useradd --system --uid 10001 app
 WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY app ./app
 USER app
 EXPOSE 8000
-CMD ["/opt/venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+# Apply pending migrations, then serve. Migrations are idempotent, so restarts are safe.
+CMD ["sh", "-c", "/opt/venv/bin/alembic upgrade head && exec /opt/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000"]
