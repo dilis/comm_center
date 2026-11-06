@@ -6,7 +6,7 @@ A centralized platform for managing messages from multiple channels. The first c
 - **API:** FastAPI, SQLAlchemy, Alembic, MySQL
 - **Monorepo:** pnpm and Turborepo; the Python API is wrapped in a thin `package.json` so Turborepo can run it
 
-> **Status:** early. Phase 0 (scaffold) is done: a health endpoint, a placeholder page, tests and containers. The design is in [`SPECS.md`](SPECS.md) (a draft with the build plan in section 6). [`CLAUDE.md`](CLAUDE.md) holds the working conventions for Claude Code.
+> **Status:** early. The scaffold, containers and the full database schema (with seed data) are done; authentication and the API endpoints are next. The design is in [`SPECS.md`](SPECS.md) (a draft with the build plan in section 6). [`CLAUDE.md`](CLAUDE.md) holds the working conventions for Claude Code.
 
 ## Prerequisites
 
@@ -22,6 +22,7 @@ Only these are needed on your machine; everything else installs inside the repo.
 pnpm install                      # JS dependencies, including Turborepo, into ./node_modules
 (cd apps/api && uv sync)          # Python dependencies into apps/api/.venv
 pnpm db:up                        # MySQL 8.4 on localhost:3307, waits until healthy
+pnpm db:migrate                   # create the schema and seed data
 pnpm dev                          # API on :8000 and web on :5173
 ```
 
@@ -39,6 +40,7 @@ Run from the repo root.
 | `pnpm lint` | `ruff check` (API) and `tsc --noEmit` (web) |
 | `pnpm build` | Type-check and build the web app |
 | `pnpm db:up` | Start only MySQL |
+| `pnpm db:migrate` | Apply database migrations (the API container does this on start) |
 | `pnpm docker:up` / `pnpm docker:down` | Build and run the full stack, or stop it |
 | `pnpm clean` | Remove everything installed in the repo (`node_modules`, `.venv`, build output, caches) |
 
@@ -49,9 +51,13 @@ cd apps/api && uv run pytest tests/test_db.py::test_database_is_mysql_8
 pnpm --filter @comm-center/web exec vitest run src/App.test.tsx -t "renders the app title"
 ```
 
+## Deployment
+
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) covers running it as separate containers, as separate processes, or with Docker Compose, including the environment files and the initial migrations.
+
 ## Containers
 
-`pnpm docker:up` builds the images and returns once every service reports healthy.
+`pnpm docker:up` builds the images and returns once every service reports healthy. Credentials and ports come from `.env` (see `.env.example`).
 
 | Service | Port | Healthcheck |
 |---|---|---|
@@ -72,6 +78,7 @@ pnpm --filter @comm-center/web exec vitest run src/App.test.tsx -t "renders the 
 ```
 apps/api   FastAPI app, tests, Dockerfile
 apps/web   React app, tests, Dockerfile, nginx.conf
+docs/      Deployment guide
 SPECS.md   Product and architecture spec (draft)
 CLAUDE.md  Guidance for Claude Code
 ```

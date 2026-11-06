@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Phase 0 (scaffold) is done: a walking skeleton with `GET /health`, a placeholder `App`, and a passing test in each app. Everything else is still specified only in `SPECS.md` (a draft; `[DECIDED]` marks settled decisions, `[OPEN]` marks unresolved ones, section 5 lists what is still open). Section 6 is the phased implementation plan; next is Phase 1 (data model and migrations). Treat `SPECS.md` as the source of truth.
+Phases 0 (scaffold) and 1 (data model and migrations) are done: the full schema, models and seed exist in `apps/api` (`app/models/`, `alembic/versions/0001_schema.py`, `0002_seed.py`), covered by DB tests. The web app is still a placeholder and there is no auth or business endpoint yet. Everything not built is specified only in `SPECS.md` (a draft; `[DECIDED]` marks settled decisions, `[OPEN]` marks unresolved ones, section 5 lists what is still open). Section 6 is the phased implementation plan; next is Phase 2 (authentication and authorization). Treat `SPECS.md` as the source of truth.
 
 ## Commands
 
@@ -14,9 +14,11 @@ Run from the repo root unless noted. Requires Node, pnpm (via Corepack), uv and 
 - `pnpm install`: install JS deps (`esbuild` is the only build script approved, via `allowBuilds` in `pnpm-workspace.yaml`). Python deps: `cd apps/api && uv sync`.
 - `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm test`: Turborepo runs the task in both apps. API lint is `ruff check`; web lint is `tsc --noEmit`.
 - `pnpm test:unit` needs nothing running (no MySQL, no containers); `pnpm test:integration` needs MySQL (`pnpm db:up`). API tests that touch the database must carry `pytestmark = pytest.mark.db` (marker declared in `apps/api/pyproject.toml`); unit tests must not import anything that connects at import time.
+- Compose reads credentials and ports from `.env` (`MYSQL_*`, `DB_PORT`, `API_PORT`, `WEB_PORT`; defaults match `.env.example`); `deploy/*.example` hold the env files for running the images without compose. Deployment modes (separate containers, processes, compose) are documented in `docs/DEPLOYMENT.md`; keep it and `.env.example` in step when you add a setting.
 - `pnpm clean` removes everything the project installed inside the repo.
+- `pnpm db:migrate` applies migrations to the dev database (the API container also runs `alembic upgrade head` on start). New migration: `cd apps/api && uv run alembic revision --autogenerate -m "..." --rev-id 000N`, then review it by hand (autogenerate cannot express triggers or the `contacts`/`users` circular foreign key, and `tests/db/test_models.py` fails if models and migrations drift).
 - Local development runs apps natively; only MySQL is a container (`pnpm db:up`).
-- Full containerized stack: `pnpm docker:up` (builds and waits until every service is healthy; `pnpm docker:down` stops it). API on :8000, web (nginx) on :8080. The `api` and `web` services sit behind the compose profile `app`, so a plain `docker compose up` starts only MySQL. Every service must define a healthcheck (add one, with `depends_on: condition: service_healthy`, for the GSM worker when it exists). The API image uses `/opt/venv` (call `/opt/venv/bin/python`, not bare `python`); the web image builds from the repo root context (`apps/web/Dockerfile`).
+- Full containerized stack: `pnpm docker:up` (builds and waits until every service is healthy; `pnpm docker:down` stops it). API on :8000, web (nginx) on :8080. The `api` and `web` services sit behind the compose profile `app`, so a plain `docker compose up` starts only MySQL. Every service must have a healthcheck: `api` and `web` define a `HEALTHCHECK` in their Dockerfile (so they are also healthy when run without compose), `db` in `docker-compose.yml`. Give the GSM worker one too, with `depends_on: condition: service_healthy`. The API image uses `/opt/venv` (call `/opt/venv/bin/python`, not bare `python`); the web image builds from the repo root context (`apps/web/Dockerfile`).
 - Single API test: `cd apps/api && uv run pytest tests/test_db.py::test_database_is_mysql_8`
 - Single web test: `pnpm --filter @comm-center/web exec vitest run src/App.test.tsx -t "renders the app title"`
 - API only: `uv run uvicorn app.main:app --reload` (from `apps/api`); web only: `pnpm --filter @comm-center/web dev`.
@@ -35,6 +37,14 @@ Turborepo + pnpm monorepo: `apps/web` (React, Vite, Tailwind, shadcn/ui, React R
 ## Working style: test-driven
 
 Write the failing test first, then the code, then refactor; a phase is done only when its tests pass. Backend tests run against a real MySQL (docker-compose), never SQLite, because the design depends on MySQL behavior (generated-column unique indexes, `SKIP LOCKED`, check constraints, FK checks). The permission matrix (each seed role × endpoint × scope) is the regression suite; keep it green. Worker tests use the fake `ChannelProvider`.
+
+## Database notes
+
+- DB tests (`apps/api/tests/db/`, auto-marked `db`) build a throwaway `comm_center_test` database by running the real migrations as `root` (URL overridable with `TEST_DATABASE_ADMIN_URL`) and roll back each test. Negative tests must assert the specific constraint name (`pytest.raises(DBAPIError, match="uq_...")`); a bare "something failed" check can pass for the wrong reason, because most inserts need valid foreign keys first.
+- `test_migration_roundtrip.py` runs migrations as the unprivileged app user, as docker-compose does. The immutability trigger on `users` needs `log_bin_trust_function_creators=1` on the MySQL server (set in `docker-compose.yml`), otherwise MySQL rejects `CREATE TRIGGER` for a non-SUPER user.
+- MySQL DDL is not transactional: a migration that fails midway leaves partial tables and no `alembic_version` row. Drop and recreate the dev database before retrying.
+- The `groups` table is named `access_group` (`groups` is reserved in MySQL 8). Soft-deletable models are filtered by a session event in `app/models/base.py`; pass `execution_options(include_deleted=True)` to see deleted rows.
+- Seeds: no human user is seeded (the first admin comes from a Phase 2 bootstrap command, so no default credential ships in a migration), and GSM device agents are created when a device is registered (Phase 5).
 
 ## Architecture invariants (they span many files)
 
