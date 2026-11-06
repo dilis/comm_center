@@ -241,3 +241,9 @@ Still open:
 **Phase 7: Hardening.** Logging and modem-error visibility, login rate limiting, deployment approach.
 
 **Risks.** Phase 1 blocks almost everything and is intricate, so review it before moving on. Hardware is the main schedule risk, mitigated by the fake provider. Open items from section 5 are needed at: `username` reuse in Phase 1; filter/sort columns in Phases 3 and 6; retry policy and `delivered` in Phase 5; restore after Phase 3; dev seed data late.
+
+### Phase 1 outcomes (implementation notes)
+
+- The groups table is `access_group` (`groups` is a reserved word in MySQL 8). Group nesting uses `group_group` plus a precomputed `group_closure` that includes reflexive rows.
+- Seed migration: `system` (user and contact id 1, owns itself) and `notification` agents, 16 permissions, 9 building-block groups and 4 roles. **No admin user is seeded**; the first admin is created by a Phase 2 bootstrap command so no default credential ships in a migration. This replaces the earlier idea that `system` owns "the initial admin user". GSM device agents are created when a device is registered (Phase 5), not seeded. Agent contacts have `type = entity`.
+- DB-level enforcement: CHECK constraints (agent direction iff system, system agents cannot log in or be soft-deleted, E.164 numbers), generated-column unique indexes (active username, active phone, one active primary phone per contact, active group name), and a trigger that makes `users.is_system` and `users.agent_direction` immutable. The trigger requires `log_bin_trust_function_creators=1` on any MySQL server running the migrations as a non-SUPER user. `[OPEN]` If that server setting is a problem for a deployment target, replace the trigger with application-level enforcement.
