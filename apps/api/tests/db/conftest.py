@@ -22,7 +22,7 @@ TEST_DB = "comm_center_test"
 
 def pytest_collection_modifyitems(items):
     for item in items:
-        if "tests/db/" in str(item.fspath):
+        if "tests/db/" in str(item.fspath) or "tests/api/" in str(item.fspath):
             item.add_marker(pytest.mark.db)
 
 

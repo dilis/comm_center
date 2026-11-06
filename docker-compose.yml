@@ -26,6 +26,7 @@ services:
     build: ./apps/api
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret}
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

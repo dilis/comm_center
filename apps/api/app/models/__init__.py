@@ -1,3 +1,4 @@
+from app.models.auth import RefreshToken
 from app.models.authz import (
     AccessGroup,
     GroupClosure,
@@ -12,6 +13,6 @@ from app.models.messaging import GsmDevice, Message
 
 __all__ = [
     "AccessGroup", "Base", "Contact", "ContactPhone", "GroupClosure", "GroupGroup",
-    "GroupPermission", "GsmDevice", "Message", "OwnedMixin", "Permission", "SoftDeleteMixin",
+    "GroupPermission", "GsmDevice", "Message", "OwnedMixin", "Permission", "RefreshToken", "SoftDeleteMixin",
     "TimestampMixin", "User", "UserGroup",
 ]

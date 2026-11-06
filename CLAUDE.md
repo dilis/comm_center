@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Phases 0 (scaffold) and 1 (data model and migrations) are done: the full schema, models and seed exist in `apps/api` (`app/models/`, `alembic/versions/0001_schema.py`, `0002_seed.py`), covered by DB tests. The web app is still a placeholder and there is no auth or business endpoint yet. Everything not built is specified only in `SPECS.md` (a draft; `[DECIDED]` marks settled decisions, `[OPEN]` marks unresolved ones, section 5 lists what is still open). Section 6 is the phased implementation plan; next is Phase 2 (authentication and authorization). Treat `SPECS.md` as the source of truth.
+Phases 0 (scaffold), 1 (data model and migrations) and 2 (authentication and authorization) are done: the schema, models and seed (`app/models/`, `alembic/versions/0001`-`0003`), JWT auth with refresh rotation (`app/security.py`, `app/routers/auth.py`), and the authorization helpers `require`/`scope`/`check_assignable_groups` (`app/authz.py`) exist in `apps/api`, covered by unit, DB and API tests. The web app is still a placeholder and the only endpoints are `/health` and `/auth/*`; create the first admin with `pnpm --filter @comm-center/api create-admin --username NAME`. Everything not built is specified only in `SPECS.md` (a draft; `[DECIDED]` marks settled decisions, `[OPEN]` marks unresolved ones, section 5 lists what is still open). Section 6 is the phased implementation plan; next is Phase 3 (users, contacts and groups API). Treat `SPECS.md` as the source of truth.
 
 ## Commands
 
@@ -23,7 +23,7 @@ Run from the repo root unless noted. Requires Node, pnpm (via Corepack), uv and 
 - Single web test: `pnpm --filter @comm-center/web exec vitest run src/App.test.tsx -t "renders the app title"`
 - API only: `uv run uvicorn app.main:app --reload` (from `apps/api`); web only: `pnpm --filter @comm-center/web dev`.
 
-Not set up yet: shadcn/ui, React Router/TanStack Query, Alembic migrations, `packages/config`. Add them in the phase that needs them.
+Not set up yet: shadcn/ui, React Router/TanStack Query, `packages/config`. Add them in the phase that needs them.
 
 ## Conventions
 
