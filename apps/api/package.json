@@ -1,0 +1,11 @@
+{
+  "name": "@comm-center/api",
+  "private": true,
+  "scripts": {
+    "dev": "uv run uvicorn app.main:app --reload",
+    "lint": "uv run ruff check .",
+    "test": "uv run pytest",
+    "test:unit": "uv run pytest -m 'not db'",
+    "test:integration": "uv run pytest -m db"
+  }
+}
