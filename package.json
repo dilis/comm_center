@@ -12,7 +12,8 @@
     "db:up": "docker compose up -d --wait db",
     "docker:up": "docker compose --profile app up -d --build --wait",
     "docker:down": "docker compose --profile app down",
-    "clean": "rm -rf node_modules .turbo apps/*/node_modules apps/*/dist apps/api/.venv apps/api/.pytest_cache apps/api/.ruff_cache"
+    "clean": "rm -rf node_modules .turbo apps/*/node_modules apps/*/dist apps/api/.venv apps/api/.pytest_cache apps/api/.ruff_cache",
+    "db:migrate": "pnpm --filter @comm-center/api migrate"
   },
   "devDependencies": {
     "turbo": "^2"
