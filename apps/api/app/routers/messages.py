@@ -36,6 +36,7 @@ class MessageOut(BaseModel):
     status: Status
     owner_id: int
     gsm_device_id: int | None
+    reply_to_id: int | None  # for a reply: the received message it answers
     created_at: datetime
     sent_at: datetime | None
     received_at: datetime | None
@@ -125,6 +126,7 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
                 status=m.status, owner_id=m.owner_id,
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
+                reply_to_id=m.reply_to_id,
                 created_at=m.created_at, sent_at=m.sent_at, received_at=m.received_at,
                 error_message=m.error_message,
             )
@@ -279,6 +281,43 @@ def send_bulk(
     db.add_all(messages)
     db.commit()
     return BulkSendResult(queued=to_out(db, messages), skipped=skipped)
+
+
+@router.post("/{message_id}/reply", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+def reply_to_message(
+    message_id: int,
+    body: ContentRequest,
+    caller: AuthUser = Depends(require("messages", "create")),
+    db: Session = Depends(get_db),
+) -> MessageOut:
+    """Answer a received message: queue a message to the number it came from, linked to it.
+
+    Allowed to whoever can create messages and can see the original, so it needs no contacts
+    access. The number is the one stored on the original, even if the contact's numbers changed.
+    """
+    original = get_scoped(db, caller, message_id)
+    keep = {"include_deleted": True}
+    owner = db.execute(
+        select(User.is_system, User.agent_direction).where(User.id == original.owner_id),
+        execution_options=keep,
+    ).one()
+    if derive_direction(owner.is_system, owner.agent_direction) != "inbound":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "only received messages can be replied to"
+        )
+    name = db.scalar(
+        select(Contact.name).where(Contact.id == original.contact_id), execution_options=keep
+    )
+    text = personalize(body.content, name)
+    if text is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
+    message = Message(
+        channel=original.channel, contact_id=original.contact_id, phone_number=original.phone_number,
+        content=text, status="queued", owner_id=caller.id, reply_to_id=original.id,
+    )  # fmt: skip
+    db.add(message)
+    db.commit()
+    return to_out(db, [message])[0]
 
 
 @router.get("/{message_id}", response_model=MessageOut)

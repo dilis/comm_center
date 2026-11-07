@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from tests.db.helpers import insert, make_contact, make_message, make_user
@@ -7,8 +8,14 @@ from tests.db.helpers import insert, make_contact, make_message, make_user
 def test_message_requires_a_contact(conn):
     with pytest.raises(DBAPIError, match="cannot be null"):
         insert(
-            conn, "messages", channel="gsm", phone_number="+639171234567", content="x",
-            status="queued", owner_id=1, contact_id=None,
+            conn,
+            "messages",
+            channel="gsm",
+            phone_number="+639171234567",
+            content="x",
+            status="queued",
+            owner_id=1,
+            contact_id=None,
         )
 
 
@@ -41,17 +48,56 @@ def _agent(conn, name):
 
 def test_each_gsm_device_has_its_own_agent(conn):
     agent = _agent(conn, "gsm-a")
-    insert(conn, "gsm_device", name="A", serial_port="/dev/ttyUSB0", phone_number="+639170000100",
-           agent_user_id=agent, owner_id=1)
+    insert(
+        conn,
+        "gsm_device",
+        name="A",
+        serial_port="/dev/ttyUSB0",
+        phone_number="+639170000100",
+        agent_user_id=agent,
+        owner_id=1,
+    )
     with pytest.raises(DBAPIError, match="uq_gsm_device_agent_user_id"):
-        insert(conn, "gsm_device", name="B", serial_port="/dev/ttyUSB1",
-               phone_number="+639170000101", agent_user_id=agent, owner_id=1)
+        insert(
+            conn,
+            "gsm_device",
+            name="B",
+            serial_port="/dev/ttyUSB1",
+            phone_number="+639170000101",
+            agent_user_id=agent,
+            owner_id=1,
+        )
 
 
 def test_outbound_message_can_reference_a_device(conn):
     agent = _agent(conn, "gsm-b")
-    device = insert(conn, "gsm_device", name="C", serial_port="/dev/ttyUSB2",
-                    phone_number="+639170000102", agent_user_id=agent, owner_id=1)
+    device = insert(
+        conn,
+        "gsm_device",
+        name="C",
+        serial_port="/dev/ttyUSB2",
+        phone_number="+639170000102",
+        agent_user_id=agent,
+        owner_id=1,
+    )
     make_message(conn, make_contact(conn), gsm_device_id=device)
     with pytest.raises(DBAPIError, match="fk_messages_gsm_device_id"):
         make_message(conn, make_contact(conn), gsm_device_id=999999)
+
+
+def test_a_reply_must_point_at_an_existing_message(conn):
+    contact = make_contact(conn)
+    with pytest.raises(DBAPIError, match="fk_messages_reply_to_id"):
+        make_message(conn, contact, reply_to_id=999999)
+
+
+def test_a_reply_can_point_at_a_message(conn):
+    contact = make_contact(conn)
+    original = make_message(conn, contact)
+    reply = make_message(conn, contact, reply_to_id=original)
+    assert (
+        conn.execute(
+            text("SELECT reply_to_id FROM messages WHERE id = :i"), {"i": reply}
+        ).scalar_one()
+        == original
+    )

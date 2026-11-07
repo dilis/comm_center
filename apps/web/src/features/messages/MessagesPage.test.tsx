@@ -9,7 +9,7 @@ import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
   channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1,
-  gsm_device_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
+  gsm_device_id: null, reply_to_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
 };
 const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
 const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
@@ -456,6 +456,123 @@ describe("placeholders in the send dialog", () => {
     await userEvent.click(await within(dialog).findByRole("checkbox"));
     fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "{{name}}".repeat(100) } });
     expect(within(dialog).getByTestId("preview")).toHaveTextContent("Over 1600 characters once the name is inserted");
+  });
+});
+
+describe("reply", () => {
+  const original = { ...incoming, id: 2, content: "Are you coming <b>Sunday</b>?", contact_name: "Ana Cruz" };
+  const answer = { ...out, id: 8, content: "Yes!", reply_to_id: 2, status: "queued" };
+
+  test.each<[Role, boolean]>([
+    ["admin", true],
+    ["operator", true],
+    ["agent", true],
+    ["auditor", false],
+  ])("%s: reply offered on a received message = %s", async (role, offered) => {
+    backend([original, out]);
+    await open(role);
+    await screen.findByText("hello Ana");
+    expect(!!screen.queryByRole("button", { name: "Reply to message 2" })).toBe(offered);
+    expect(screen.queryByRole("button", { name: "Reply to message 1" })).not.toBeInTheDocument(); // sent: nothing to reply to
+  });
+
+  test("the dialog shows who you are answering and what they wrote, as text", async () => {
+    backend([original]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Reply to message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reply" });
+    expect(dialog).toHaveTextContent("To Ana Cruz, at +639171234567");
+    expect(within(dialog).getByText(/Ana Cruz wrote on/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Are you coming <b>Sunday</b>?")).toBeInTheDocument();
+    expect(dialog.querySelector("b")).toBeNull();
+  });
+
+  test("sends the reply to the original message, with names filled in by the server, and refreshes", async () => {
+    backend([original]);
+    let body: unknown;
+    server.use(http.post("*/api/messages/2/reply", async ({ request }) => ((body = await request.json()), HttpResponse.json(answer, { status: 201 }))));
+    await open();
+    const before = requests.length;
+    await userEvent.click(await screen.findByRole("button", { name: "Reply to message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reply" });
+    await userEvent.type(within(dialog).getByLabelText("Message"), "Yes ");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Insert name" }));
+    expect(within(dialog).getByTestId("preview")).toHaveTextContent("Yes Ana Cruz");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send reply" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(body).toEqual({ content: "Yes {{name}}" });
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  });
+
+  test("a message is required and placeholders are checked before any request", async () => {
+    backend([original]);
+    let posted = false;
+    server.use(http.post("*/api/messages/2/reply", () => ((posted = true), HttpResponse.json(answer, { status: 201 }))));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Reply to message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reply" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send reply" }));
+    expect(await within(dialog).findByText("Enter a message")).toBeInTheDocument();
+    setText(within(dialog).getByLabelText("Message"), "Hi {{who}}");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send reply" }));
+    expect(await within(dialog).findByText(/Unknown placeholder \{\{who\}\}/)).toBeInTheDocument();
+    expect(posted).toBe(false);
+  });
+
+  test("the server's reason is shown and the dialog stays open", async () => {
+    backend([original]);
+    server.use(http.post("*/api/messages/2/reply", () => HttpResponse.json({ detail: "message not found" }, { status: 404 })));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Reply to message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reply" });
+    await userEvent.type(within(dialog).getByLabelText("Message"), "hi");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send reply" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("message not found");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  test("a reply is marked in the list", async () => {
+    backend([answer, original]);
+    await open();
+    const row = (await screen.findByText("Yes!")).closest("tr")!;
+    expect(row).toHaveTextContent("Reply to #2");
+    expect(screen.getByText("Are you coming <b>Sunday</b>?").closest("tr")).not.toHaveTextContent("Reply to");
+  });
+
+  test("a reply's details show the message it answers", async () => {
+    backend([answer]);
+    server.use(http.get("*/api/messages/2", () => HttpResponse.json(original)));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 8" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    expect(await within(dialog).findByText("Are you coming <b>Sunday</b>?")).toBeInTheDocument();
+    expect(within(dialog).getByText(/In reply to/)).toBeInTheDocument();
+  });
+
+  test("if the original is no longer available the details say so", async () => {
+    backend([answer]);
+    server.use(http.get("*/api/messages/2", () => HttpResponse.json({ detail: "message not found" }, { status: 404 })));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 8" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    expect(await within(dialog).findByText("The original message is no longer available.")).toBeInTheDocument();
+  });
+
+  test("a received message's details offer Reply", async () => {
+    backend([original]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 2" }));
+    const details = await screen.findByRole("dialog", { name: "Message" });
+    await userEvent.click(within(details).getByRole("button", { name: "Reply" }));
+    expect(await screen.findByRole("dialog", { name: "Reply" })).toBeInTheDocument();
+  });
+
+  test("details of a sent message have no Reply button", async () => {
+    backend([out]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 1" }));
+    const details = await screen.findByRole("dialog", { name: "Message" });
+    expect(within(details).queryByRole("button", { name: "Reply" })).not.toBeInTheDocument();
   });
 });
 

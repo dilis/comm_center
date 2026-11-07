@@ -49,13 +49,14 @@ Rules:
 
 ## Initial migrations
 
-The schema and starting data are created by three Alembic migrations in `apps/api/alembic/versions/`:
+The schema and starting data are created by four Alembic migrations in `apps/api/alembic/versions/`:
 
 | Revision | What it does |
 |---|---|
 | `0001` | Creates all tables, indexes, CHECK constraints, generated-column unique indexes, and a trigger that makes `users.is_system` and `users.agent_direction` immutable |
 | `0002` | Seeds the `system` and `notification` agents (users and contacts), the 16 permissions, the 9 building-block groups, the 4 roles (`admin`, `operator`, `agent`, `auditor`) and the precomputed group closure |
 | `0003` | Adds `refresh_token`, so logout and token rotation can revoke refresh tokens |
+| `0004` | Adds `messages.reply_to_id`, linking a reply to the received message it answers |
 
 What to know:
 - **No human user is seeded.** There is no default credential. Create the first admin once, after migrating: `ADMIN_PASSWORD=... pnpm --filter @comm-center/api create-admin --username NAME` (it prompts for the password if `ADMIN_PASSWORD` is unset, needs at least 10 characters, and refuses to run once any human user exists). In the API container: `docker compose exec api /opt/venv/bin/python -m app.cli create-admin --username NAME`.
@@ -63,7 +64,7 @@ What to know:
 - **Native processes migrate explicitly:** `pnpm db:migrate`.
 - **The trigger needs a server setting.** `0001` creates a trigger, and MySQL only lets a non-SUPER user do that when `log_bin_trust_function_creators=1`. The compose file and the commands below already pass `--log-bin-trust-function-creators=1`. A MySQL you provide yourself needs it too, for example `SET GLOBAL log_bin_trust_function_creators = 1;` or the same line under `[mysqld]` in its config. Without it, migration `0001` fails with error 1419.
 - **A failed migration leaves partial tables.** MySQL DDL is not transactional. If a migration fails midway, drop and recreate the database before retrying (the data is only what the migrations created).
-- **Check the state** with `alembic current` (see each mode). A healthy database reports `0003 (head)`.
+- **Check the state** with `alembic current` (see each mode). A healthy database reports `0004 (head)`.
 
 ## 1. Separate containers
 
@@ -106,7 +107,7 @@ curl http://127.0.0.1:8000/health                        # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'          # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                    # {"status":"ok"}: the web container reaches the API
 docker run --rm --network cc-net --env-file deploy/api.env comm-center-api \
-  /opt/venv/bin/alembic current                          # 0003 (head)
+  /opt/venv/bin/alembic current                          # 0004 (head)
 ```
 
 Run migrations by hand (for example after pulling a new version, before replacing the API container):
@@ -146,7 +147,7 @@ cp .env.example .env     # edit it; DATABASE_URL must match the database you use
 ```sh
 pnpm install                                  # JS dependencies into ./node_modules
 (cd apps/api && uv sync --no-dev)             # Python dependencies into apps/api/.venv (use plain `uv sync` if you also want the tests)
-pnpm db:migrate                               # applies 0001 to 0003
+pnpm db:migrate                               # applies 0001 to 0004
 
 # API (keep it running; add --reload only for development)
 cd apps/api && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -163,7 +164,7 @@ Verify:
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                  # {"status":"ok"}: the proxy reaches the API
-(cd apps/api && uv run alembic current)                # 0003 (head)
+(cd apps/api && uv run alembic current)                # 0004 (head)
 ```
 
 ## 3. Docker Compose
@@ -182,7 +183,7 @@ Verify (use your `API_PORT` and `WEB_PORT`):
 docker compose --profile app ps                        # db, api and web all (healthy)
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
-docker compose exec api /opt/venv/bin/alembic current  # 0003 (head)
+docker compose exec api /opt/venv/bin/alembic current  # 0004 (head)
 ```
 
 Run migrations by hand:

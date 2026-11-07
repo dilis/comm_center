@@ -303,6 +303,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/{message_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply To Message
+         * @description Answer a received message: queue a message to the number it came from, linked to it.
+         *
+         *     Allowed to whoever can create messages and can see the original, so it needs no contacts
+         *     access. The number is the one stored on the original, even if the contact's numbers changed.
+         */
+        post: operations["reply_to_message_messages__message_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -427,6 +450,11 @@ export interface components {
              */
             type?: "person" | "entity";
         };
+        /** ContentRequest */
+        ContentRequest: {
+            /** Content */
+            content: string;
+        };
         /** Counts */
         Counts: {
             /** All */
@@ -515,6 +543,8 @@ export interface components {
             phone_number: string;
             /** Received At */
             received_at: string | null;
+            /** Reply To Id */
+            reply_to_id: number | null;
             /** Sent At */
             sent_at: string | null;
             /**
@@ -1339,6 +1369,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reply_to_message_messages__message_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOut"];
+                };
             };
             /** @description Validation Error */
             422: {

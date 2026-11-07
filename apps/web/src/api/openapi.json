@@ -250,6 +250,20 @@
         "title": "ContactUpdate",
         "type": "object"
       },
+      "ContentRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 1600,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "ContentRequest",
+        "type": "object"
+      },
       "Counts": {
         "properties": {
           "all": {
@@ -489,6 +503,17 @@
             ],
             "title": "Received At"
           },
+          "reply_to_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply To Id"
+          },
           "sent_at": {
             "anyOf": [
               {
@@ -525,6 +550,7 @@
           "status",
           "owner_id",
           "gsm_device_id",
+          "reply_to_id",
           "created_at",
           "sent_at",
           "received_at",
@@ -2161,6 +2187,64 @@
           }
         ],
         "summary": "Read Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/{message_id}/reply": {
+      "post": {
+        "description": "Answer a received message: queue a message to the number it came from, linked to it.\n\nAllowed to whoever can create messages and can see the original, so it needs no contacts\naccess. The number is the one stored on the original, even if the contact's numbers changed.",
+        "operationId": "reply_to_message_messages__message_id__reply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reply To Message",
         "tags": [
           "messages"
         ]

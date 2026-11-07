@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Plus, Trash2 } from "lucide-react";
+import { CornerUpLeft, Eye, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -17,12 +17,18 @@ import { formatDateTime } from "@/lib/utils";
 
 import { POLL } from "./polling";
 import { MessageDetailDialog, directionLabel, type Message } from "./MessageDetailDialog";
+import { ReplyDialog } from "./ReplyDialog";
 import { SendMessageDialog } from "./SendMessageDialog";
 
 const STATUSES = ["queued", "sending", "sent", "failed", "delivered", "received"] as const;
 type Status = (typeof STATUSES)[number];
 type Direction = "all" | "sent" | "received";
-type Dialog = { kind: "new" } | { kind: "view"; message: Message } | { kind: "delete"; message: Message } | null;
+type Dialog =
+  | { kind: "new" }
+  | { kind: "view"; message: Message }
+  | { kind: "reply"; message: Message }
+  | { kind: "delete"; message: Message }
+  | null;
 
 const STATUS_VARIANT = {
   queued: "secondary", sending: "warning", sent: "success", delivered: "success", failed: "destructive", received: "default",
@@ -35,6 +41,8 @@ export default function MessagesPage() {
   const queryClient = useQueryClient();
   const list = useListParams({ sort: "created_at", order: "desc", filters: ["q", "status", "direction"] });
   const [dialog, setDialog] = useState<Dialog>(null);
+  // Only received messages can be answered, by someone who may create messages.
+  const canReply = (m: Message) => m.direction === "inbound" && can("messages:create");
   const { q, status } = list.filters;
   const direction: Direction = list.filters.direction === "sent" || list.filters.direction === "received" ? list.filters.direction : "all";
 
@@ -76,7 +84,16 @@ export default function MessagesPage() {
   });
 
   const columns: Column<Message>[] = [
-    { id: "direction", header: "Direction", cell: (m) => <Badge variant="outline">{directionLabel(m)}</Badge> },
+    {
+      id: "direction",
+      header: "Direction",
+      cell: (m) => (
+        <div>
+          <Badge variant="outline">{directionLabel(m)}</Badge>
+          {m.reply_to_id != null && <div className="mt-1 text-xs text-muted-foreground">Reply to #{m.reply_to_id}</div>}
+        </div>
+      ),
+    },
     {
       id: "contact",
       header: "Contact",
@@ -112,6 +129,11 @@ export default function MessagesPage() {
           <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => setDialog({ kind: "view", message: m })}>
             <Eye className="h-4 w-4" aria-hidden />
           </Button>
+          {canReply(m) && (
+            <Button variant="ghost" size="icon" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
+              <CornerUpLeft className="h-4 w-4" aria-hidden />
+            </Button>
+          )}
           {canDeleteMessage(m) && (
             <Button variant="ghost" size="icon" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
               <Trash2 className="h-4 w-4" aria-hidden />
@@ -178,7 +200,14 @@ export default function MessagesPage() {
         onSortChange={(_, order) => list.setSort("created_at", order)}
       />
       {dialog?.kind === "new" && <SendMessageDialog onClose={() => setDialog(null)} />}
-      {dialog?.kind === "view" && <MessageDetailDialog message={dialog.message} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "view" && (
+        <MessageDetailDialog
+          message={dialog.message}
+          onClose={() => setDialog(null)}
+          onReply={canReply(dialog.message) ? () => setDialog({ kind: "reply", message: dialog.message }) : undefined}
+        />
+      )}
+      {dialog?.kind === "reply" && <ReplyDialog message={dialog.message} onClose={() => setDialog(null)} />}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           title="Delete message"
