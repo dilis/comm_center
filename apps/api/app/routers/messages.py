@@ -19,6 +19,7 @@ from app.schemas import SortOrder
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 MAX_CONTENT_LENGTH = 1600  # ten concatenated SMS segments
+MAX_BULK_RECIPIENTS = 500
 Status = Literal["queued", "sending", "sent", "failed", "delivered", "received"]
 
 
@@ -39,10 +40,8 @@ class MessageOut(BaseModel):
     error_message: str | None
 
 
-class SendRequest(BaseModel):
-    contact_id: int
+class ContentRequest(BaseModel):
     content: str = Field(max_length=MAX_CONTENT_LENGTH)
-    phone: str | None = None  # one of the contact's numbers; default: primary, else first
 
     @field_validator("content")
     @classmethod
@@ -51,10 +50,29 @@ class SendRequest(BaseModel):
             raise ValueError("content must not be blank")
         return value
 
+
+class SendRequest(ContentRequest):
+    contact_id: int
+    phone: str | None = None  # one of the contact's numbers; default: primary, else first
+
     @field_validator("phone")
     @classmethod
     def _normalize(cls, value: str | None) -> str | None:
         return None if value is None else normalize_e164(value)
+
+
+class BulkSendRequest(ContentRequest):
+    contact_ids: list[int] = Field(min_length=1, max_length=MAX_BULK_RECIPIENTS)
+
+
+class Skipped(BaseModel):
+    contact_id: int
+    reason: str
+
+
+class BulkSendResult(BaseModel):
+    queued: list[MessageOut]
+    skipped: list[Skipped]
 
 
 class Counts(BaseModel):
@@ -200,6 +218,48 @@ def send_message(
     db.add(message)
     db.commit()
     return to_out(db, [message])[0]
+
+
+@router.post("/send-bulk", response_model=BulkSendResult, status_code=status.HTTP_201_CREATED)
+def send_bulk(
+    body: BulkSendRequest,
+    caller: AuthUser = Depends(require("messages", "create")),
+    db: Session = Depends(get_db),
+) -> BulkSendResult:
+    """Queue the same text for many contacts: one message each, to the contact's primary number
+    (else its first). Contacts that cannot be messaged are skipped and reported, the rest are
+    queued together in one transaction, in the order given."""
+    ids = list(dict.fromkeys(body.contact_ids))  # each contact once, order kept
+    contacts = {
+        c.id
+        for c in db.scalars(scope(select(Contact).where(Contact.id.in_(ids)), caller, "contacts"))
+    }
+    phones: dict[int, list[ContactPhone]] = {}
+    for phone in db.scalars(
+        select(ContactPhone).where(ContactPhone.contact_id.in_(contacts)).order_by(ContactPhone.id)
+    ):
+        phones.setdefault(phone.contact_id, []).append(phone)
+
+    messages: list[Message] = []
+    skipped: list[Skipped] = []
+    for contact_id in ids:
+        if contact_id not in contacts:  # also what an unreadable contact looks like
+            skipped.append(Skipped(contact_id=contact_id, reason="contact not found"))
+            continue
+        numbers = phones.get(contact_id)
+        if not numbers:
+            skipped.append(Skipped(contact_id=contact_id, reason="no phone number"))
+            continue
+        chosen = next((p for p in numbers if p.is_primary), numbers[0])
+        messages.append(
+            Message(
+                channel="gsm", contact_id=contact_id, phone_number=chosen.phone_e164,
+                content=body.content, status="queued", owner_id=caller.id,
+            )
+        )  # fmt: skip
+    db.add_all(messages)
+    db.commit()
+    return BulkSendResult(queued=to_out(db, messages), skipped=skipped)
 
 
 @router.get("/{message_id}", response_model=MessageOut)

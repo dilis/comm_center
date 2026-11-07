@@ -144,65 +144,159 @@ describe("what each role is offered", () => {
 });
 
 describe("send", () => {
-  const contacts = [
-    { id: 10, name: "Ana Cruz", email: null, user_id: null, phones: [
-      { phone: "+639171111111", label: "home", is_primary: false },
-      { phone: "+639172222222", label: "work", is_primary: true },
-    ] },
-    { id: 11, name: "No Phone", email: null, user_id: null, phones: [] },
-  ];
+  const ana = { id: 10, name: "Ana Cruz", email: null, user_id: null, phones: [
+    { phone: "+639171111111", label: "home", is_primary: false },
+    { phone: "+639172222222", label: "work", is_primary: true },
+  ] };
+  const ben = { id: 11, name: "Ben Lim", email: null, user_id: null, phones: [{ phone: "+639173333333", label: null, is_primary: true }] };
+  const noPhone = { id: 12, name: "No Phone", email: null, user_id: null, phones: [] };
+  let contactQueries: URL[];
 
   async function openSend(role: Role | string[] = "admin") {
     backend([]);
-    server.use(http.get("*/api/contacts", () => HttpResponse.json(page(contacts))));
+    contactQueries = [];
+    server.use(
+      http.get("*/api/contacts", ({ request }) => {
+        const url = new URL(request.url);
+        contactQueries.push(url);
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        return HttpResponse.json(page([ana, ben, noPhone].filter((c) => c.name.toLowerCase().includes(q))));
+      }),
+    );
     await open(role);
     await userEvent.click(await screen.findByRole("button", { name: "New message" }));
     return screen.findByRole("dialog", { name: "New message" });
   }
+  const choose = async (dialog: HTMLElement, name: RegExp) =>
+    userEvent.click(await within(dialog).findByRole("checkbox", { name }));
+  const sendButton = (dialog: HTMLElement) => within(dialog).getByRole("button", { name: /^Send/ });
 
-  test("sends to the chosen contact's primary number and refreshes the list", async () => {
+  test("sends to one contact's primary number and refreshes the list", async () => {
     let body: unknown;
     server.use(http.post("*/api/messages/send", async ({ request }) => ((body = await request.json()), HttpResponse.json({ ...queued, id: 50 }, { status: 201 }))));
     const dialog = await openSend();
     const before = requests.length;
-    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await choose(dialog, /Ana Cruz/);
     expect(within(dialog).getByLabelText("Phone number")).toHaveValue("+639172222222");
     await userEvent.type(within(dialog).getByLabelText("Message"), "hello there");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    await userEvent.click(sendButton(dialog));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(body).toEqual({ contact_id: 10, phone: "+639172222222", content: "hello there" });
     await waitFor(() => expect(requests.length).toBeGreaterThan(before));
   });
 
-  test("another of the contact's numbers can be chosen", async () => {
+  test("with one contact another of its numbers can be chosen", async () => {
     let body: { phone?: string } = {};
     server.use(http.post("*/api/messages/send", async ({ request }) => ((body = (await request.json()) as typeof body), HttpResponse.json({ ...queued, id: 51 }, { status: 201 }))));
     const dialog = await openSend();
-    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await choose(dialog, /Ana Cruz/);
     await userEvent.selectOptions(within(dialog).getByLabelText("Phone number"), "+639171111111");
     await userEvent.type(within(dialog).getByLabelText("Message"), "x");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    await userEvent.click(sendButton(dialog));
     await waitFor(() => expect(body.phone).toBe("+639171111111"));
   });
 
-  test("contacts without a phone number cannot be chosen", async () => {
+  test("contacts without a phone number are not offered", async () => {
     const dialog = await openSend();
-    await within(dialog).findByRole("radio", { name: /Ana Cruz/ });
-    expect(within(dialog).queryByRole("radio", { name: /No Phone/ })).not.toBeInTheDocument();
+    await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ });
+    expect(within(dialog).queryByRole("checkbox", { name: /No Phone/ })).not.toBeInTheDocument();
+  });
+
+  test("several contacts are sent in one request, each to its own primary number", async () => {
+    let body: unknown;
+    let bulk = 0;
+    server.use(
+      http.post("*/api/messages/send-bulk", async ({ request }) => {
+        bulk += 1;
+        body = await request.json();
+        return HttpResponse.json({ queued: [queued, { ...queued, id: 5 }], skipped: [] }, { status: 201 });
+      }),
+      http.post("*/api/messages/send", () => HttpResponse.json({}, { status: 500 })),
+    );
+    const dialog = await openSend();
+    const before = requests.length;
+    await choose(dialog, /Ana Cruz/);
+    await choose(dialog, /Ben Lim/);
+    expect(within(dialog).getByText("2 selected")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Phone number")).not.toBeInTheDocument(); // each uses its primary
+    expect(sendButton(dialog)).toHaveTextContent("Send to 2 contacts");
+    await userEvent.type(within(dialog).getByLabelText("Message"), "Hello everyone");
+    await userEvent.click(sendButton(dialog));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(body).toEqual({ contact_ids: [10, 11], content: "Hello everyone" });
+    expect(bulk).toBe(1);
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  });
+
+  test("when some contacts were skipped the dialog says who and why, and stays until closed", async () => {
+    server.use(
+      http.post("*/api/messages/send-bulk", () =>
+        HttpResponse.json(
+          { queued: [{ ...queued, id: 60 }], skipped: [{ contact_id: 11, reason: "no phone number" }] },
+          { status: 201 },
+        ),
+      ),
+    );
+    const dialog = await openSend();
+    const before = requests.length;
+    await choose(dialog, /Ana Cruz/);
+    await choose(dialog, /Ben Lim/);
+    await userEvent.type(within(dialog).getByLabelText("Message"), "hi all");
+    await userEvent.click(sendButton(dialog));
+    const summary = await within(dialog).findByRole("status");
+    expect(summary).toHaveTextContent("Queued 1 message");
+    expect(summary).toHaveTextContent("Ben Lim");
+    expect(summary).toHaveTextContent("no phone number");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before)); // the list already refreshed
+    await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("select all shown, clear selection, and removing one contact", async () => {
+    const dialog = await openSend();
+    await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Select all shown" }));
+    expect(within(dialog).getByText("2 selected")).toBeInTheDocument(); // Ana and Ben; No Phone is not offered
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove Ana Cruz" }));
+    expect(within(dialog).getByText("1 selected")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Phone number")).toBeInTheDocument(); // back to one contact
+    await userEvent.click(within(dialog).getByRole("button", { name: "Clear selection" }));
+    expect(within(dialog).queryByText(/selected$/)).not.toBeInTheDocument();
+  });
+
+  test("the selection survives searching for other contacts", async () => {
+    const dialog = await openSend();
+    await userEvent.type(within(dialog).getByRole("searchbox", { name: "Find contacts" }), "ben");
+    await choose(dialog, /Ben Lim/);
+    await waitFor(() => expect(within(dialog).queryByRole("checkbox", { name: /Ana Cruz/ })).not.toBeInTheDocument());
+    await userEvent.clear(within(dialog).getByRole("searchbox", { name: "Find contacts" }));
+    await choose(dialog, /Ana Cruz/);
+    expect(within(dialog).getByText("2 selected")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: /Ben Lim/ })).toBeChecked();
+  });
+
+  test("asks for up to 100 contacts at a time, by name", async () => {
+    const dialog = await openSend();
+    await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ });
+    expect(Object.fromEntries(contactQueries.at(-1)!.searchParams)).toMatchObject({ page_size: "100", sort: "name", order: "asc" });
   });
 
   test("a contact and a message are required, and the length is limited, before any request", async () => {
-    let posted = false;
-    server.use(http.post("*/api/messages/send", () => ((posted = true), HttpResponse.json(queued, { status: 201 }))));
+    let posted = 0;
+    server.use(
+      http.post("*/api/messages/send", () => (posted++, HttpResponse.json(queued, { status: 201 }))),
+      http.post("*/api/messages/send-bulk", () => (posted++, HttpResponse.json({ queued: [], skipped: [] }, { status: 201 }))),
+    );
     const dialog = await openSend();
-    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
-    expect(await within(dialog).findByText("Choose a contact")).toBeInTheDocument();
+    await userEvent.click(sendButton(dialog));
+    expect(await within(dialog).findByText("Choose at least one contact")).toBeInTheDocument();
     expect(within(dialog).getByText("Enter a message")).toBeInTheDocument();
-    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await choose(dialog, /Ana Cruz/);
     fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "x".repeat(1601) } });
-    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    await userEvent.click(sendButton(dialog));
     expect(await within(dialog).findByText("At most 1600 characters")).toBeInTheDocument();
-    expect(posted).toBe(false);
+    expect(posted).toBe(0);
   });
 
   test("shows a character counter", async () => {
@@ -212,12 +306,13 @@ describe("send", () => {
   });
 
   test("shows the server's reason and keeps the form open", async () => {
-    server.use(http.post("*/api/messages/send", () => HttpResponse.json({ detail: "contact has no phone number" }, { status: 422 })));
+    server.use(http.post("*/api/messages/send-bulk", () => HttpResponse.json({ detail: "permission denied" }, { status: 403 })));
     const dialog = await openSend();
-    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await choose(dialog, /Ana Cruz/);
+    await choose(dialog, /Ben Lim/);
     await userEvent.type(within(dialog).getByLabelText("Message"), "hi");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("contact has no phone number");
+    await userEvent.click(sendButton(dialog));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("permission denied");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

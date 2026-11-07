@@ -263,6 +263,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/send-bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Bulk
+         * @description Queue the same text for many contacts: one message each, to the contact's primary number
+         *     (else its first). Contacts that cannot be messaged are skipped and reported, the rest are
+         *     queued together in one transaction, in the order given.
+         */
+        post: operations["send_bulk_messages_send_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/{message_id}": {
         parameters: {
             query?: never;
@@ -322,6 +344,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BulkSendRequest */
+        BulkSendRequest: {
+            /** Contact Ids */
+            contact_ids: number[];
+            /** Content */
+            content: string;
+        };
+        /** BulkSendResult */
+        BulkSendResult: {
+            /** Queued */
+            queued: components["schemas"]["MessageOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["Skipped"][];
+        };
         /** ContactIn */
         ContactIn: {
             /** Email */
@@ -589,6 +625,13 @@ export interface components {
             content: string;
             /** Phone */
             phone?: string | null;
+        };
+        /** Skipped */
+        Skipped: {
+            /** Contact Id */
+            contact_id: number;
+            /** Reason */
+            reason: string;
         };
         /** TokenPair */
         TokenPair: {
@@ -1202,6 +1245,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_bulk_messages_send_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkSendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkSendResult"];
                 };
             };
             /** @description Validation Error */

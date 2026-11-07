@@ -7,17 +7,14 @@ import { SearchBox } from "@/components/SearchBox";
 
 export type PickableContact = components["schemas"]["ContactOut"];
 
-/** Search contacts and choose one. By default only contacts that are not yet a user are offered
- *  (to link a new user); ``purpose="message"`` offers contacts that have a phone number instead. */
-export function ContactPicker({
-  value, onChange, purpose = "user",
-}: { value: number | null; onChange: (contact: PickableContact) => void; purpose?: "user" | "message" }) {
+/** Search contacts and choose one that is not yet a user (to link a new user to it). */
+export function ContactPicker({ value, onChange }: { value: number | null; onChange: (contact: PickableContact) => void }) {
   const [q, setQ] = useState("");
   const contacts = useQuery({
     queryKey: ["contacts", "picker", q],
     queryFn: () => unwrap(api.GET("/contacts", { params: { query: { q: q || undefined, page_size: 10, sort: "name", order: "asc" } } })),
   });
-  const choices = contacts.data?.items.filter((c) => (purpose === "user" ? !c.user_id : c.phones.length > 0)) ?? [];
+  const choices = contacts.data?.items.filter((c) => !c.user_id) ?? [];
   return (
     <div className="space-y-2">
       <SearchBox label="Find a contact" value={q} onChange={setQ} />
@@ -35,11 +32,7 @@ export function ContactPicker({
           </label>
         ))}
         {contacts.data && choices.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            {purpose === "user"
-              ? "No available contacts. Contacts that already have a user are not listed."
-              : "No contacts with a phone number found."}
-          </p>
+          <p className="text-xs text-muted-foreground">No available contacts. Contacts that already have a user are not listed.</p>
         )}
       </div>
     </div>

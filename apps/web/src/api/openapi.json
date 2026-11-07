@@ -1,6 +1,54 @@
 {
   "components": {
     "schemas": {
+      "BulkSendRequest": {
+        "properties": {
+          "contact_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Contact Ids",
+            "type": "array"
+          },
+          "content": {
+            "maxLength": 1600,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contact_ids"
+        ],
+        "title": "BulkSendRequest",
+        "type": "object"
+      },
+      "BulkSendResult": {
+        "properties": {
+          "queued": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "title": "Queued",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/Skipped"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "queued",
+          "skipped"
+        ],
+        "title": "BulkSendResult",
+        "type": "object"
+      },
       "ContactIn": {
         "properties": {
           "email": {
@@ -778,10 +826,28 @@
           }
         },
         "required": [
-          "contact_id",
-          "content"
+          "content",
+          "contact_id"
         ],
         "title": "SendRequest",
+        "type": "object"
+      },
+      "Skipped": {
+        "properties": {
+          "contact_id": {
+            "title": "Contact Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact_id",
+          "reason"
+        ],
+        "title": "Skipped",
         "type": "object"
       },
       "TokenPair": {
@@ -1963,6 +2029,53 @@
           }
         ],
         "summary": "Send Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/send-bulk": {
+      "post": {
+        "description": "Queue the same text for many contacts: one message each, to the contact's primary number\n(else its first). Contacts that cannot be messaged are skipped and reported, the rest are\nqueued together in one transaction, in the order given.",
+        "operationId": "send_bulk_messages_send_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkSendResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send Bulk",
         "tags": [
           "messages"
         ]
