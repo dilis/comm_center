@@ -1,5 +1,6 @@
 """Register a GSM device: its inbound system agent, the agent's contact and the device row."""
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -51,3 +52,14 @@ def register_device(db: Session, name: str, serial_port: str, phone_number: str)
             raise DeviceError(f"device {name!r} already exists") from None
         raise
     return device
+
+
+FAKE_DEVICE_NAME = "fake"
+
+
+def ensure_fake_device(db: Session) -> GsmDevice | None:
+    """For the fake provider only: if no device exists, register a ``fake`` one so a fresh stack can
+    send messages without a manual step. Returns it, or None when a device already exists."""
+    if db.scalars(select(GsmDevice.id).limit(1)).first() is not None:
+        return None
+    return register_device(db, FAKE_DEVICE_NAME, "fake", "+639170000000")

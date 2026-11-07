@@ -8,7 +8,7 @@ Three ways to run Comm Center. Run the commands from the repo root. Each mode wa
 | [2. Separate processes](#2-separate-processes) | Development, or a host that runs processes directly | container or native install | native processes |
 | [3. Docker Compose](#3-docker-compose) | The simplest full deployment | container | containers |
 
-> **Current scope:** the API serves `/health`, authentication, users, contacts, groups and messages, and there is a GSM worker (fake provider only until a modem is attached). The web app is still a placeholder page. A fresh deployment has the schema and seed data but no human user: create the first admin as described below.
+> **Current scope:** the API serves `/health`, authentication, users, contacts, groups and messages, and there is a GSM worker (fake provider only until a modem is attached). The web app (sign-in, Messages, Contacts, Users) talks to the API only through its own `/api` path, so the browser needs no CORS and only the web port has to be reachable by users. A fresh deployment has the schema and seed data but no human user: create the first admin as described below.
 
 ## Environment variables
 
@@ -24,13 +24,16 @@ The same few variables drive every mode.
 | `JWT_SECRET` | API | Signs access and refresh tokens; use a long random value outside development (`openssl rand -hex 32`). Changing it logs everyone out. | a dev-only value |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `DEFAULT_PHONE_REGION` | API | Optional: token lifetimes and the region used to read phone numbers typed without a country code | `900`, `604800`, `PH` |
 | `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | GSM worker | Optional: idle wait between cycles, sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched every cycle for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
+| `API_UPSTREAM` | Web container | `host:port` nginx forwards `/api/` to, as seen from the web container. Set with `-e` outside compose. | `api:8000` |
+| `API_PROXY_TARGET` | `pnpm dev`, `vite preview` | URL those two forward `/api` to | `http://127.0.0.1:8000` |
 | `DB_PORT`, `API_PORT`, `WEB_PORT` | Compose only | Host ports for the three services | `3307`, `8000`, `8080` |
 
 Rules:
 - `DATABASE_URL` must use the same user, password and database as the `MYSQL_*` values. In compose the API's URL is built from them, so you set them once.
 - Use **URL-safe passwords** (letters and digits). They are embedded in `DATABASE_URL`, and characters such as `@` or `/` would need percent-encoding.
 - MySQL reads `MYSQL_*` only when it creates an empty data directory. Changing them later does not change an existing database.
-- The web image is a static build and reads no environment variables.
+- The web image is a static build; its only setting is `API_UPSTREAM`, read by nginx when the container starts. nginx resolves that name at start, so the API must already be running (compose and the steps below start it first).
+- The web server adds a strict Content-Security-Policy (scripts only from its own origin, requests only to its own origin) and the usual hardening headers. `style-src` allows inline styles because the dialog library injects a `<style>` element; scripts stay strict. If you put another proxy in front, keep these headers.
 - For real deployments, change every default password, and do not publish the database port to the network (remove the `db` `ports:` entry in compose, or bind it to `127.0.0.1`).
 
 ### Which file holds what
@@ -90,7 +93,7 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' cc-db)" = healthy ]; do 
 
 # 6. API (runs the migrations, then serves) and web. Both images define a HEALTHCHECK.
 docker run -d --name cc-api --network cc-net --env-file deploy/api.env -p 8000:8000 comm-center-api
-docker run -d --name cc-web --network cc-net -p 8080:80 comm-center-web
+docker run -d --name cc-web --network cc-net -e API_UPSTREAM=cc-api:8000 -p 8080:80 comm-center-web
 ```
 
 Add `-p 127.0.0.1:3306:3306` to step 4 only if you need to reach the database from the host.
@@ -100,6 +103,7 @@ Verify:
 docker ps --format 'table {{.Names}}\t{{.Status}}'      # all three should say (healthy)
 curl http://127.0.0.1:8000/health                        # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'          # <title>Comm Center</title>
+curl http://127.0.0.1:8080/api/health                    # {"status":"ok"}: the web container reaches the API
 docker run --rm --network cc-net --env-file deploy/api.env comm-center-api \
   /opt/venv/bin/alembic current                          # 0003 (head)
 ```
@@ -151,12 +155,13 @@ pnpm --filter @comm-center/web build
 pnpm --filter @comm-center/web exec vite preview --host 127.0.0.1 --port 8080
 ```
 
-`vite preview` is for checking the build. In production serve `apps/web/dist` with a real web server; `apps/web/nginx.conf` shows the one rule needed (fall back to `index.html` for unknown paths). For long-running use, put both processes under a supervisor such as systemd. For development, `pnpm dev` starts both with hot reload instead.
+`vite preview` is for checking the build; it forwards `/api` to the API like nginx does (`API_PROXY_TARGET` if the API is not on `127.0.0.1:8000`). In production serve `apps/web/dist` with a real web server and give it the same two rules as `apps/web/nginx.conf`: fall back to `index.html` for unknown paths, and forward `/api/` to the API with the prefix removed. For long-running use, put both processes under a supervisor such as systemd. For development, `pnpm dev` starts both with hot reload instead.
 
 Verify:
 ```sh
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
+curl http://127.0.0.1:8080/api/health                  # {"status":"ok"}: the proxy reaches the API
 (cd apps/api && uv run alembic current)                # 0003 (head)
 ```
 
@@ -195,12 +200,11 @@ To run several copies side by side (for example a test copy), give each its own 
 
 The worker sends queued messages and stores received ones. It is a **separate process**, never part of the API, because it owns the modem's serial port: run exactly one worker per set of devices, and never under `--reload`. It uses MySQL as its queue, so it needs the same `DATABASE_URL` as the API and a migrated database.
 
-1. Register each modem once (creates the device and its inbound agent `gsm-<name>`):
-   `pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyUSB0 --phone "+639170000000"`
-   (in the API container: `docker compose exec api /opt/venv/bin/python -m app.cli register-device ...`).
-2. Start the worker: `pnpm --filter @comm-center/api worker -- --provider fake` (native), or `docker compose --profile app --profile worker up -d --wait` (compose, service `worker`, healthy while its heartbeat file is fresh).
+- **Compose:** the worker is the `worker` service and starts with the rest of the stack (`pnpm docker:up`). It is healthy while its heartbeat file is fresh, and it waits (healthy) if no device is registered yet.
+- **Native:** `pnpm --filter @comm-center/api worker -- --provider fake`.
+- **Devices:** the worker watches for devices, so one registered later is picked up within a few seconds, with no restart. Register a modem (creates the device and its inbound agent `gsm-<name>`) with `pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyUSB0 --phone "+639170000000"` (in the API container: `docker compose exec api /opt/venv/bin/python -m app.cli register-device ...`).
 
-**Only the fake provider exists yet.** It logs sends instead of transmitting them (they are still marked `sent`), so do not run it where real messages matter. `--fake-inbox FILE` makes it deliver SMS from a JSON-lines file (`{"from": "+639171234567", "text": "hi"}` per line) for trying things out. The real modem provider arrives with the hardware; compose will then also need the serial device passed through (`devices:`).
+**Only the fake provider exists yet.** It logs sends instead of transmitting them (they are still marked `sent`), and if no device is registered it adds one called `fake` so a fresh stack works out of the box. Do not run it where real messages matter. `--fake-inbox FILE` makes it deliver SMS from a JSON-lines file (`{"from": "+639171234567", "text": "hi"}` per line) for trying things out; the compose worker reads `/tmp/fake-inbox.jsonl`, so you can "receive" a message with `docker compose exec worker sh -c "echo '{\"from\": \"0917 123 4567\", \"text\": \"hello\"}' >> /tmp/fake-inbox.jsonl"`. It goes through the real inbound path: the sender's contact is found or created, and the message appears on the Received tab. The real modem provider arrives with the hardware; compose will then also need the serial device passed through (`devices:`).
 
 Behaviour to know:
 - A message is attempted up to `WORKER_MAX_ATTEMPTS` times with doubling waits, then marked `failed` with the error. A number the modem rejects outright is failed at once.

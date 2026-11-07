@@ -1,0 +1,258 @@
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+
+import { server } from "@/test/server";
+import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
+
+const base = {
+  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1,
+  gsm_device_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
+};
+const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
+const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
+const failed = { ...base, id: 3, direction: "outbound", content: "never arrives", status: "failed", error_message: "no signal" };
+const queued = { ...base, id: 4, direction: "outbound", content: "waiting", status: "queued" };
+
+let requests: URL[];
+function backend(items: unknown[] = [out, incoming, failed], counts = { all: 3, sent: 2, received: 1 }) {
+  requests = [];
+  server.use(
+    http.get("*/api/messages/counts", () => HttpResponse.json(counts)),
+    http.get("*/api/messages", ({ request }) => {
+      requests.push(new URL(request.url));
+      return HttpResponse.json(page(items));
+    }),
+  );
+}
+const lastQuery = () => Object.fromEntries(requests.at(-1)!.searchParams);
+
+async function open(role: Role | string[] = "admin", url = "/messages") {
+  signIn(role);
+  renderApp(url);
+  await screen.findByRole("heading", { name: "Messages" });
+}
+
+beforeEach(() => emptyBackend());
+
+describe("list", () => {
+  test("shows direction, contact, content and status", async () => {
+    backend();
+    await open();
+    const row = (await screen.findByText("hello Ana")).closest("tr")!;
+    expect(within(row).getByText("Sent")).toBeInTheDocument();
+    expect(within(row).getByText("Ana Cruz")).toBeInTheDocument();
+    expect(within(row).getByText("+639171234567")).toBeInTheDocument();
+    expect(screen.getByText("hi from Ana").closest("tr")).toHaveTextContent("Received");
+    const failedRow = screen.getByText("never arrives").closest("tr")!;
+    expect(failedRow).toHaveTextContent("failed");
+    expect(failedRow).toHaveTextContent("no signal");
+  });
+
+  test("asks for the newest first, on the All tab", async () => {
+    backend();
+    await open();
+    await screen.findByText("hello Ana");
+    expect(lastQuery()).toMatchObject({ direction: "all", order: "desc", page: "1", page_size: "20" });
+  });
+
+  test("tabs show scoped counts and switch the direction", async () => {
+    backend();
+    await open();
+    expect(await screen.findByRole("tab", { name: "All 3" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Sent 2" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Received 1" }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ direction: "received", page: "1" }));
+    expect(screen.getByRole("tab", { name: "Received 1" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("the tab is restored from the URL", async () => {
+    backend();
+    await open("admin", "/messages?direction=sent");
+    await screen.findByText("hello Ana");
+    expect(lastQuery()).toMatchObject({ direction: "sent" });
+    expect(screen.getByRole("tab", { name: /Sent/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("status and search are sent to the API", async () => {
+    backend();
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "failed");
+    await waitFor(() => expect(lastQuery()).toMatchObject({ status: "failed" }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search messages" }), "ana");
+    await waitFor(() => expect(lastQuery()).toMatchObject({ q: "ana", status: "failed", page: "1" }));
+  });
+
+  test("the date column flips the sort order", async () => {
+    backend();
+    await open();
+    await screen.findByText("hello Ana");
+    await userEvent.click(within(screen.getByRole("columnheader", { name: /Date/ })).getByRole("button"));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ order: "asc" }));
+  });
+
+  test("message content is untrusted: shown as text, with line breaks kept", async () => {
+    backend([{ ...incoming, content: "<script>alert(1)</script>\n<b>bold?</b>" }]);
+    await open();
+    const cell = await screen.findByText(/<script>alert\(1\)<\/script>/);
+    expect(cell).toHaveTextContent("<b>bold?</b>");
+    expect(cell.className).toMatch(/whitespace-pre-wrap/);
+    expect(document.querySelector("script, b")).toBeNull();
+  });
+
+  test("empty state", async () => {
+    backend([], { all: 0, sent: 0, received: 0 });
+    await open();
+    expect(await screen.findByText("No messages found.")).toBeInTheDocument();
+  });
+
+  test("a queued message is refreshed until the worker has sent it", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0 })),
+      http.get("*/api/messages", () => HttpResponse.json(page([++calls < 2 ? queued : { ...queued, status: "sent" }]))),
+    );
+    await open();
+    const table = () => within(screen.getByRole("table", { name: "Messages" }));
+    expect(await screen.findByText("queued")).toBeInTheDocument();
+    await waitFor(() => expect(table().getByText("sent")).toBeInTheDocument(), { timeout: 6000 });
+    expect(calls).toBe(2); // polling stops once nothing is pending
+  }, 10_000);
+});
+
+describe("what each role is offered", () => {
+  test.each<[Role, boolean, boolean]>([
+    ["admin", true, true],
+    ["operator", true, false],
+    ["agent", true, false],
+    ["auditor", false, false],
+  ])("%s: send=%s delete=%s", async (role, send, remove) => {
+    backend([out]);
+    await open(role);
+    await screen.findByText("hello Ana");
+    expect(!!screen.queryByRole("button", { name: "New message" })).toBe(send);
+    expect(!!screen.queryByRole("button", { name: "Delete message 1" })).toBe(remove);
+  });
+
+  test("with read_own only the caller's own messages can be deleted", async () => {
+    backend([out, { ...out, id: 9, owner_id: 99, content: "someone else's" }]);
+    await open(["messages:read_own", "messages:delete"]);
+    await screen.findByText("hello Ana");
+    expect(screen.getByRole("button", { name: "Delete message 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete message 9" })).not.toBeInTheDocument();
+  });
+});
+
+describe("send", () => {
+  const contacts = [
+    { id: 10, name: "Ana Cruz", email: null, user_id: null, phones: [
+      { phone: "+639171111111", label: "home", is_primary: false },
+      { phone: "+639172222222", label: "work", is_primary: true },
+    ] },
+    { id: 11, name: "No Phone", email: null, user_id: null, phones: [] },
+  ];
+
+  async function openSend(role: Role | string[] = "admin") {
+    backend([]);
+    server.use(http.get("*/api/contacts", () => HttpResponse.json(page(contacts))));
+    await open(role);
+    await userEvent.click(await screen.findByRole("button", { name: "New message" }));
+    return screen.findByRole("dialog", { name: "New message" });
+  }
+
+  test("sends to the chosen contact's primary number and refreshes the list", async () => {
+    let body: unknown;
+    server.use(http.post("*/api/messages/send", async ({ request }) => ((body = await request.json()), HttpResponse.json({ ...queued, id: 50 }, { status: 201 }))));
+    const dialog = await openSend();
+    const before = requests.length;
+    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    expect(within(dialog).getByLabelText("Phone number")).toHaveValue("+639172222222");
+    await userEvent.type(within(dialog).getByLabelText("Message"), "hello there");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(body).toEqual({ contact_id: 10, phone: "+639172222222", content: "hello there" });
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  });
+
+  test("another of the contact's numbers can be chosen", async () => {
+    let body: { phone?: string } = {};
+    server.use(http.post("*/api/messages/send", async ({ request }) => ((body = (await request.json()) as typeof body), HttpResponse.json({ ...queued, id: 51 }, { status: 201 }))));
+    const dialog = await openSend();
+    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await userEvent.selectOptions(within(dialog).getByLabelText("Phone number"), "+639171111111");
+    await userEvent.type(within(dialog).getByLabelText("Message"), "x");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(body.phone).toBe("+639171111111"));
+  });
+
+  test("contacts without a phone number cannot be chosen", async () => {
+    const dialog = await openSend();
+    await within(dialog).findByRole("radio", { name: /Ana Cruz/ });
+    expect(within(dialog).queryByRole("radio", { name: /No Phone/ })).not.toBeInTheDocument();
+  });
+
+  test("a contact and a message are required, and the length is limited, before any request", async () => {
+    let posted = false;
+    server.use(http.post("*/api/messages/send", () => ((posted = true), HttpResponse.json(queued, { status: 201 }))));
+    const dialog = await openSend();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    expect(await within(dialog).findByText("Choose a contact")).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter a message")).toBeInTheDocument();
+    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "x".repeat(1601) } });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    expect(await within(dialog).findByText("At most 1600 characters")).toBeInTheDocument();
+    expect(posted).toBe(false);
+  });
+
+  test("shows a character counter", async () => {
+    const dialog = await openSend();
+    await userEvent.type(within(dialog).getByLabelText("Message"), "12345");
+    expect(within(dialog).getByText("5 / 1600")).toBeInTheDocument();
+  });
+
+  test("shows the server's reason and keeps the form open", async () => {
+    server.use(http.post("*/api/messages/send", () => HttpResponse.json({ detail: "contact has no phone number" }, { status: 422 })));
+    const dialog = await openSend();
+    await userEvent.click(await within(dialog).findByRole("radio", { name: /Ana Cruz/ }));
+    await userEvent.type(within(dialog).getByLabelText("Message"), "hi");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("contact has no phone number");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("view and delete", () => {
+  test("a message can be opened to read all of it", async () => {
+    backend([failed]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 3" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    expect(within(dialog).getByText("never arrives")).toBeInTheDocument();
+    expect(within(dialog).getByText("no signal")).toBeInTheDocument();
+    expect(within(dialog).getByText("+639171234567")).toBeInTheDocument();
+  });
+
+  test("delete asks first, then removes and refreshes", async () => {
+    backend([out]);
+    let deleted = false;
+    server.use(http.delete("*/api/messages/1", () => ((deleted = true), new HttpResponse(null, { status: 204 }))));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Delete message 1" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete message" });
+    expect(deleted).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleted).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  test("a refusal is shown in the dialog", async () => {
+    backend([out]);
+    server.use(http.delete("*/api/messages/1", () => HttpResponse.json({ detail: "message not found" }, { status: 404 })));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Delete message 1" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("message not found");
+  });
+});
