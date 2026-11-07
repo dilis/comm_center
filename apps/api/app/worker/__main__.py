@@ -53,7 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     def make_worker(device_id: int) -> DeviceWorker:
         return DeviceWorker(
             device_id,
-            FakeProvider(inbox_file=args.fake_inbox),
+            FakeProvider(
+                inbox_file=args.fake_inbox,
+                send_delay=settings.worker_fake_send_delay_seconds,
+                send_jitter=settings.worker_fake_send_jitter_seconds,
+                sleep=lambda seconds: stop.wait(seconds),  # a shutdown interrupts a pending send
+            ),
             SessionLocal,
             policy,
             sleep=lambda seconds: stop.wait(seconds),

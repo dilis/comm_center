@@ -47,6 +47,9 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
       WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
+      # How long the fake modem takes per message (seconds): the delay plus up to the jitter.
+      WORKER_FAKE_SEND_DELAY_SECONDS: ${WORKER_FAKE_SEND_DELAY_SECONDS:-2}
+      WORKER_FAKE_SEND_JITTER_SECONDS: ${WORKER_FAKE_SEND_JITTER_SECONDS:-1}
     healthcheck:
       # Healthy while the loops keep touching the heartbeat file (the API runs the migrations).
       test: ["CMD", "/opt/venv/bin/python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.heartbeat')<60 else 1)"]
