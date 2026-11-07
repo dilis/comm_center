@@ -15,11 +15,13 @@ from app.models import Contact, ContactPhone, GsmDevice, Message, User
 from app.pagination import Page, PageParams, paginate
 from app.phones import normalize_e164
 from app.schemas import SortOrder
+from app.templating import UnknownPlaceholders, render, validate
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 MAX_CONTENT_LENGTH = 1600  # ten concatenated SMS segments
 MAX_BULK_RECIPIENTS = 500
+TOO_LONG_WITH_NAME = "message too long once the name is inserted"
 Status = Literal["queued", "sending", "sent", "failed", "delivered", "received"]
 
 
@@ -48,6 +50,10 @@ class ContentRequest(BaseModel):
     def _not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("content must not be blank")
+        try:
+            validate(value)  # {{name}} is the only placeholder; anything else is a typo
+        except UnknownPlaceholders as exc:
+            raise ValueError(str(exc)) from None
         return value
 
 
@@ -143,6 +149,12 @@ def by_direction(stmt, direction: Literal["all", "sent", "received"]):
     return stmt
 
 
+def personalize(template: str, name: str) -> str | None:
+    """The text for one recipient, or None if their name makes it longer than a message may be."""
+    text = render(template, {"name": name})
+    return text if len(text) <= MAX_CONTENT_LENGTH else None
+
+
 @router.get("", response_model=Page[MessageOut])
 def list_messages(
     direction: Literal["all", "sent", "received"] = "all",
@@ -211,9 +223,12 @@ def send_message(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, "contact has no phone number"
             )
+    text = personalize(body.content, contact.name)
+    if text is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
     message = Message(
         channel="gsm", contact_id=contact.id, phone_number=chosen.phone_e164,
-        content=body.content, status="queued", owner_id=caller.id,
+        content=text, status="queued", owner_id=caller.id,
     )  # fmt: skip
     db.add(message)
     db.commit()
@@ -231,7 +246,7 @@ def send_bulk(
     queued together in one transaction, in the order given."""
     ids = list(dict.fromkeys(body.contact_ids))  # each contact once, order kept
     contacts = {
-        c.id
+        c.id: c.name
         for c in db.scalars(scope(select(Contact).where(Contact.id.in_(ids)), caller, "contacts"))
     }
     phones: dict[int, list[ContactPhone]] = {}
@@ -250,11 +265,15 @@ def send_bulk(
         if not numbers:
             skipped.append(Skipped(contact_id=contact_id, reason="no phone number"))
             continue
+        text = personalize(body.content, contacts[contact_id])
+        if text is None:
+            skipped.append(Skipped(contact_id=contact_id, reason=TOO_LONG_WITH_NAME))
+            continue
         chosen = next((p for p in numbers if p.is_primary), numbers[0])
         messages.append(
             Message(
                 channel="gsm", contact_id=contact_id, phone_number=chosen.phone_e164,
-                content=body.content, status="queued", owner_id=caller.id,
+                content=text, status="queued", owner_id=caller.id,
             )
         )  # fmt: skip
     db.add_all(messages)

@@ -9,13 +9,13 @@ import type { components } from "@/api/schema";
 import { FieldError } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PickableContact } from "@/features/users/ContactPicker";
 
+import { ComposeField, contentSchema } from "./ComposeField";
 import { MultiContactPicker } from "./MultiContactPicker";
 
-export const MAX_LENGTH = 1600; // ten SMS segments: the API's limit
 export const MAX_RECIPIENTS = 500; // the API's limit
 
 type BulkResult = components["schemas"]["BulkSendResult"];
@@ -23,7 +23,7 @@ type BulkResult = components["schemas"]["BulkSendResult"];
 const schema = z.object({
   contactIds: z.array(z.number()).min(1, "Choose at least one contact").max(MAX_RECIPIENTS, `At most ${MAX_RECIPIENTS} contacts at a time`),
   phone: z.string(),
-  content: z.string().refine((v) => v.trim() !== "", "Enter a message").refine((v) => v.length <= MAX_LENGTH, `At most ${MAX_LENGTH} characters`),
+  content: contentSchema,
 });
 type Values = z.infer<typeof schema>;
 
@@ -35,9 +35,8 @@ export function SendMessageDialog({ onClose }: { onClose: () => void }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<BulkResult | null>(null);
   const {
-    register, control, setValue, watch, handleSubmit, formState: { errors },
+    register, control, setValue, handleSubmit, formState: { errors },
   } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { contactIds: [], phone: "", content: "" } });
-  const length = watch("content").length;
   const only = selected.length === 1 ? selected[0] : null;
 
   const send = useMutation({
@@ -126,14 +125,13 @@ export function SendMessageDialog({ onClose }: { onClose: () => void }) {
                 </Select>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label htmlFor="message-content">Message</Label>
-              <Textarea id="message-content" {...register("content")} />
-              <div className="flex justify-between">
-                <FieldError message={errors.content?.message} />
-                <span className="ml-auto text-xs text-muted-foreground">{length} / {MAX_LENGTH}</span>
-              </div>
-            </div>
+            <Controller
+              control={control}
+              name="content"
+              render={({ field }) => (
+                <ComposeField id="message-content" value={field.value} onChange={field.onChange} error={errors.content?.message} previewName={selected[0]?.name} />
+              )}
+            />
             {failure && (
               <p role="alert" className="text-sm text-destructive">
                 {failure}

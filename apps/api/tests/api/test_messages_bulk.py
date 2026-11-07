@@ -160,3 +160,32 @@ def test_unauthenticated(client):
         client.post("/messages/send-bulk", json={"contact_ids": [1], "content": "x"}).status_code
         == 401
     )
+
+
+def test_each_recipient_gets_their_own_name(client, h, conn):
+    ana = person(conn, "Ana Cruz", "+639171111111")
+    ben = person(conn, "Ben Lim", "+639172222222")
+    body = bulk(client, h, [ana, ben], content="Dear {{name}}, see you Sunday").json()
+    assert [m["content"] for m in body["queued"]] == [
+        "Dear Ana Cruz, see you Sunday",
+        "Dear Ben Lim, see you Sunday",
+    ]
+
+
+def test_unknown_placeholders_reject_the_whole_request(client, h, conn):
+    ana = person(conn, "Ana", "+639171111111")
+    r = bulk(client, h, [ana], content="Hi {{first_name}}")
+    assert r.status_code == 422 and "unknown placeholder {{first_name}}" in r.text
+    assert conn.execute(text("SELECT COUNT(*) FROM messages")).scalar_one() == 0
+
+
+def test_a_recipient_whose_name_makes_the_text_too_long_is_skipped_not_the_others(client, h, conn):
+    short = person(conn, "Al", "+639171111111")
+    long_name = person(conn, "N" * 50, "+639172222222")
+    body = bulk(
+        client, h, [short, long_name], content="{{name}}" * 150
+    ).json()  # 300 vs 7500 characters
+    assert [m["contact_id"] for m in body["queued"]] == [short]
+    assert body["skipped"] == [
+        {"contact_id": long_name, "reason": "message too long once the name is inserted"}
+    ]

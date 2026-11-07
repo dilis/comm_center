@@ -320,3 +320,30 @@ def test_unauthenticated(client):
         client.delete("/messages/1"),
     ):
         assert call.status_code == 401
+
+
+# ---- placeholders ----------------------------------------------------------------------------
+
+
+def test_send_fills_in_the_contacts_name_and_stores_the_final_text(client, h, ana):
+    r = send(client, h, contact_id=ana, content="Hi {{name}}, yes you, {{ name }}!")
+    assert r.status_code == 201
+    assert r.json()["content"] == "Hi Ana Cruz, yes you, Ana Cruz!"
+    assert (
+        client.get(f"/messages/{r.json()['id']}", headers=h).json()["content"]
+        == "Hi Ana Cruz, yes you, Ana Cruz!"
+    )
+
+
+def test_send_rejects_unknown_placeholders_instead_of_texting_braces(client, h, ana, conn):
+    r = send(client, h, contact_id=ana, content="Hi {{nam}}")
+    assert r.status_code == 422 and "unknown placeholder {{nam}}" in r.text and "{{name}}" in r.text
+    assert conn.execute(text("SELECT COUNT(*) FROM messages")).scalar_one() == 0
+
+
+def test_the_length_limit_applies_to_the_text_after_the_name_is_inserted(client, h, conn):
+    long_name = make_contact(conn, "N" * 50)
+    make_phone(conn, long_name, "+639175550000")
+    r = send(client, h, contact_id=long_name, content="{{name}}" * 150)  # 1200 characters as typed
+    assert r.status_code == 422 and "too long once the name is inserted" in r.text
+    assert send(client, h, contact_id=long_name, content="{{name}}" * 10).status_code == 201

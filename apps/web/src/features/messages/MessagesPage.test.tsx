@@ -28,6 +28,8 @@ function backend(items: unknown[] = [out, incoming, failed], counts = { all: 3, 
   );
 }
 const lastQuery = () => Object.fromEntries(requests.at(-1)!.searchParams);
+// userEvent.type reads "{{" as an escape for one "{", so text with placeholders is set directly.
+const setText = (box: HTMLElement, value: string) => fireEvent.change(box, { target: { value } });
 
 async function open(role: Role | string[] = "admin", url = "/messages") {
   signIn(role);
@@ -378,6 +380,82 @@ describe("send", () => {
     await userEvent.click(sendButton(dialog));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("permission denied");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("placeholders in the send dialog", () => {
+  const ana = { id: 10, name: "Ana Cruz", email: null, user_id: null, phones: [{ phone: "+639172222222", label: null, is_primary: true }] };
+  const ben = { id: 11, name: "Ben Lim", email: null, user_id: null, phones: [{ phone: "+639173333333", label: null, is_primary: true }] };
+
+  async function openSend() {
+    backend([]);
+    server.use(http.get("*/api/contacts", () => HttpResponse.json(page([ana, ben]))));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "New message" }));
+    return screen.findByRole("dialog", { name: "New message" });
+  }
+
+  test("Insert name puts {{name}} at the cursor", async () => {
+    const dialog = await openSend();
+    const box = within(dialog).getByLabelText("Message") as HTMLTextAreaElement;
+    await userEvent.type(box, "Hello !");
+    box.setSelectionRange(6, 6);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Insert name" }));
+    expect(box.value).toBe("Hello {{name}}!");
+    expect(within(dialog).getByText("15 / 1600")).toBeInTheDocument();
+  });
+
+  test("a preview shows how the first selected contact will read it", async () => {
+    const dialog = await openSend();
+    expect(within(dialog).queryByText(/Preview for/)).not.toBeInTheDocument();
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ }));
+    setText(within(dialog).getByLabelText("Message"), "Dear {{name}}, see you");
+    const preview = within(dialog).getByTestId("preview");
+    expect(preview).toHaveTextContent("Preview for Ana Cruz");
+    expect(preview).toHaveTextContent("Dear Ana Cruz, see you");
+  });
+
+  test("no preview when the text has no placeholder", async () => {
+    const dialog = await openSend();
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ }));
+    await userEvent.type(within(dialog).getByLabelText("Message"), "Just text");
+    expect(within(dialog).queryByTestId("preview")).not.toBeInTheDocument();
+  });
+
+  test("the server gets the template as typed and fills in each name itself", async () => {
+    let body: unknown;
+    server.use(http.post("*/api/messages/send-bulk", async ({ request }) => ((body = await request.json()), HttpResponse.json({ queued: [], skipped: [] }, { status: 201 }))));
+    const dialog = await openSend();
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ }));
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /Ben Lim/ }));
+    setText(within(dialog).getByLabelText("Message"), "Hi {{name}}!");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^Send/ }));
+    await waitFor(() => expect(body).toEqual({ contact_ids: [10, 11], content: "Hi {{name}}!" }));
+  });
+
+  test("an unknown placeholder is caught before anything is sent", async () => {
+    let posted = 0;
+    server.use(
+      http.post("*/api/messages/send", () => (posted++, HttpResponse.json(queued, { status: 201 }))),
+      http.post("*/api/messages/send-bulk", () => (posted++, HttpResponse.json({ queued: [], skipped: [] }, { status: 201 }))),
+    );
+    const dialog = await openSend();
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ }));
+    setText(within(dialog).getByLabelText("Message"), "Hi {{nam}}");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^Send/ }));
+    expect(await within(dialog).findByText("Unknown placeholder {{nam}}; supported: {{name}}")).toBeInTheDocument();
+    expect(posted).toBe(0);
+  });
+
+  test("warns when a long name pushes the message over the limit", async () => {
+    server.use(http.get("*/api/contacts", () => HttpResponse.json(page([{ ...ana, name: "N".repeat(60) }]))));
+    backend([]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "New message" }));
+    const dialog = await screen.findByRole("dialog", { name: "New message" });
+    await userEvent.click(await within(dialog).findByRole("checkbox"));
+    fireEvent.change(within(dialog).getByLabelText("Message"), { target: { value: "{{name}}".repeat(100) } });
+    expect(within(dialog).getByTestId("preview")).toHaveTextContent("Over 1600 characters once the name is inserted");
   });
 });
 
