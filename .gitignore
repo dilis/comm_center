@@ -11,3 +11,6 @@ __pycache__/
 
 # Real deployment env files (the *.example files are committed)
 deploy/*.env
+
+# Spreadsheets hold personal data (names, phone numbers): never commit them
+*.xlsx
