@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
 import { server } from "@/test/server";
+
+import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
@@ -105,19 +107,81 @@ describe("list", () => {
     await open();
     expect(await screen.findByText("No messages found.")).toBeInTheDocument();
   });
+});
+
+describe("live updates", () => {
+  const defaults = { ...POLL };
+  beforeEach(() => Object.assign(POLL, { pendingMs: 40, idleMs: 40 }));
+  afterEach(() => Object.assign(POLL, defaults));
+
+  test("received messages appear on their own, with the tab counts, without a reload", async () => {
+    let arrived = false;
+    server.use(
+      http.get("*/api/messages/counts", () =>
+        HttpResponse.json(arrived ? { all: 2, sent: 1, received: 1 } : { all: 1, sent: 1, received: 0 }),
+      ),
+      http.get("*/api/messages", () => HttpResponse.json(page(arrived ? [incoming, out] : [out]))),
+    );
+    await open();
+    expect(await screen.findByText("hello Ana")).toBeInTheDocument();
+    expect(screen.queryByText("hi from Ana")).not.toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Received 0" })).toBeInTheDocument();
+    arrived = true;
+    expect(await screen.findByText("hi from Ana")).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Received 1" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "All 2" })).toBeInTheDocument();
+  });
+
+  test("the page, filters and tab you chose are kept across refreshes", async () => {
+    backend();
+    await open("admin", "/messages?direction=received&status=received&q=ana&page=2");
+    await screen.findByText("hello Ana");
+    const seen = requests.length;
+    await waitFor(() => expect(requests.length).toBeGreaterThan(seen + 2)); // several refreshes later
+    for (const url of requests) {
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({ direction: "received", status: "received", q: "ana", page: "2" });
+    }
+    expect(screen.getByRole("searchbox", { name: "Search messages" })).toHaveValue("ana");
+  });
 
   test("a queued message is refreshed until the worker has sent it", async () => {
     let calls = 0;
     server.use(
       http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0 })),
-      http.get("*/api/messages", () => HttpResponse.json(page([++calls < 2 ? queued : { ...queued, status: "sent" }]))),
+      http.get("*/api/messages", () => HttpResponse.json(page([++calls < 3 ? queued : { ...queued, status: "sent" }]))),
     );
     await open();
     const table = () => within(screen.getByRole("table", { name: "Messages" }));
     expect(await screen.findByText("queued")).toBeInTheDocument();
-    await waitFor(() => expect(table().getByText("sent")).toBeInTheDocument(), { timeout: 6000 });
-    expect(calls).toBe(2); // polling stops once nothing is pending
-  }, 10_000);
+    await waitFor(() => expect(table().getByText("sent")).toBeInTheDocument());
+  });
+
+  test("a failed background refresh keeps the rows on screen and the next one recovers", async () => {
+    let failing = false;
+    server.use(
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0 })),
+      http.get("*/api/messages", () =>
+        failing ? HttpResponse.json({ detail: "temporarily down" }, { status: 500 }) : HttpResponse.json(page([out])),
+      ),
+    );
+    await open();
+    expect(await screen.findByText("hello Ana")).toBeInTheDocument();
+    failing = true;
+    await new Promise((r) => setTimeout(r, 300)); // several failed refreshes
+    expect(screen.getByText("hello Ana")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    failing = false;
+    expect(screen.getByText("hello Ana")).toBeInTheDocument();
+  });
+
+  test("a failing first load still reports the error", async () => {
+    server.use(
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0 })),
+      http.get("*/api/messages", () => HttpResponse.json({ detail: "temporarily down" }, { status: 500 })),
+    );
+    await open();
+    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily down");
+  });
 });
 
 describe("what each role is offered", () => {

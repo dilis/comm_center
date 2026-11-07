@@ -15,6 +15,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useListParams } from "@/lib/useListParams";
 import { formatDateTime } from "@/lib/utils";
 
+import { POLL } from "./polling";
 import { MessageDetailDialog, directionLabel, type Message } from "./MessageDetailDialog";
 import { SendMessageDialog } from "./SendMessageDialog";
 
@@ -27,8 +28,6 @@ const STATUS_VARIANT = {
   queued: "secondary", sending: "warning", sent: "success", delivered: "success", failed: "destructive", received: "default",
 } as const;
 
-/** While the worker still has something to send, keep the list fresh. */
-const POLL_MS = 3000;
 const pending = (m: Message) => m.status === "queued" || m.status === "sending";
 
 export default function MessagesPage() {
@@ -43,6 +42,8 @@ export default function MessagesPage() {
     queryKey: ["messages", "counts"],
     queryFn: () => unwrap(api.GET("/messages/counts")),
     placeholderData: keepPreviousData,
+    refetchInterval: POLL.idleMs, // new messages change the tab numbers too
+    refetchOnWindowFocus: true,
   });
   const query = useQuery({
     queryKey: ["messages", "list", list.page, list.pageSize, list.order, q, status, direction],
@@ -62,7 +63,11 @@ export default function MessagesPage() {
         }),
       ),
     placeholderData: keepPreviousData,
-    refetchInterval: (state) => (state.state.data?.items.some(pending) ? POLL_MS : false),
+    // Keep checking: quickly while something is still being sent (statuses change every few
+    // seconds), and slowly otherwise so received messages appear without a reload. Background
+    // tabs pause, and coming back to the tab refreshes at once.
+    refetchInterval: (state) => (state.state.data?.items.some(pending) ? POLL.pendingMs : POLL.idleMs),
+    refetchOnWindowFocus: true,
   });
 
   const remove = useMutation({
@@ -163,7 +168,9 @@ export default function MessagesPage() {
         pageSize={list.pageSize}
         sort={{ key: "created_at", order: list.order }}
         isLoading={query.isPending}
-        error={query.error ? errorMessage(query.error) : null}
+        // A failed background refresh keeps the rows already on screen; only a first load (or a
+        // new filter with nothing to show yet) reports the error in the table.
+        error={query.isError && (!query.data || query.isPlaceholderData) ? errorMessage(query.error) : null}
         emptyMessage="No messages found."
         getRowId={(m) => m.id}
         onPageChange={list.setPage}
