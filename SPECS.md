@@ -232,7 +232,7 @@ Still open:
 
 **Phase 3: Users, contacts and groups API** (done, see outcomes below). CRUD with phone handling, pagination, filter and sort; `GET /groups`; group assignment in user create/update; delete rules (contact linked to an active user cannot be deleted).
 
-**Phase 4: Messages API.** `POST /messages/send` (enqueue with snapshot `phone_number`); `GET /messages` with computed `direction`, tabs and scoped counts; `DELETE /messages/{id}`.
+**Phase 4: Messages API** (done, see outcomes below). `POST /messages/send` (enqueue with snapshot `phone_number`); `GET /messages` with computed `direction`, tabs and scoped counts; `DELETE /messages/{id}`.
 
 **Phase 5: GSM worker.** `ChannelProvider` interface and a fake provider; outbound claim loop (`SKIP LOCKED`, retries); inbound polling with find-or-create contact and duplicate-key race handling; then the real modem provider once hardware is available.
 
@@ -267,3 +267,12 @@ Still open:
 - **Users:** `POST` takes `username`, `password`, optional `is_active`, `group_ids`, and exactly one of `contact_id` (link an existing contact, which needs read access to it) or `contact` (create one, which needs `contacts:create`; the new contact is owned by the caller). `PUT` fields are optional: `username`, `is_active`, `group_ids` need `users:update`; `name`, `email`, `phones` need `contacts:update` on the linked contact (`email: null` clears it). `group_ids` replaces the set after the escalation check. System agents are invisible here (404). A caller cannot delete or deactivate themselves (409). Deleting a user soft-deletes it, revokes its refresh tokens and leaves the contact in place. Duplicate username or already-linked contact is 409. A username is reusable after a soft delete (the unique index ignores deleted rows), which settles open question 4 as "yes".
 - **Not in this phase:** admin password reset (an admin sets the initial password only; users change it via `/auth/me/password`), restore endpoints (open question 3), and removing groups from a user the caller could not have assigned them to (not restricted by the spec).
 - **Tests:** `tests/api/test_contacts.py`, `test_users.py`, `test_groups.py`, plus `test_endpoint_matrix.py` (each seed role against each endpoint).
+
+### Phase 4 outcomes (implementation notes)
+
+- **Endpoints:** `POST /messages/send`, `GET /messages`, `GET /messages/counts`, `GET /messages/{id}`, `DELETE /messages/{id}`. There is no update route (405). `/messages/counts` returns `{all, sent, received}` under the caller's read scope, for the tab badges.
+- **Send:** body `{contact_id, content, phone?}`, needs `messages:create` and read access to the contact (a caller without it gets 403, a missing or deleted contact 404). `phone` must be one of the contact's active numbers (422 otherwise); omitted, the primary number is used, else the first. The E.164 number is copied into `phone_number` as the snapshot. The message is created `queued`, channel `gsm`, owned by the caller; `owner_id`, `status` and `direction` in the body are ignored. `content` must not be blank and is limited to 1600 characters (ten SMS segments, a choice not in the spec).
+- **List:** `direction=all|sent|received` (`received` = owned by an inbound system agent, `sent` = everything else), `status`, `contact_id`, `q` (content or number, literal substring), `order=desc|asc` on `created_at` (newest first by default), plus the shared `page`/`page_size`/`total` envelope. Visibility, `total` and `counts` all come from `scope()`.
+- **Computed fields:** every message carries `direction` (`app/messaging.py:derive_direction`), `contact_name`, and `gsm_device_id` (stored for outbound, derived from the receiving agent's `GsmDevice` for inbound). Owners and contacts are read including soft-deleted rows, so history survives deleting a user or contact. The `sent`/`received` filter uses a subquery on inbound agents rather than a join on `users`, for the same reason.
+- **Delete:** soft, needs `messages:delete`, and only for messages the caller can read (404 otherwise). A `queued` or `sending` message can be deleted too; the Phase 5 worker must skip rows with `deleted_at` set when it claims work and must not resurrect them.
+- **Tests:** `tests/test_messaging_logic.py` (direction), `tests/api/test_messages.py`, and message rows in `tests/api/test_endpoint_matrix.py`.

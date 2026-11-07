@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from app.messaging import inbound_agent_ids
 from app.models import (
     AccessGroup,
     Contact,
@@ -125,10 +126,7 @@ def scope(stmt: Select, user: AuthUser, resource: str) -> Select:
         if user.can("messages", "read_own"):
             clauses.append(Message.owner_id == user.id)
         if user.can("messages", "read_received"):
-            inbound_agents = select(User.id).where(
-                User.is_system.is_(True), User.agent_direction == "inbound"
-            )
-            clauses.append(Message.owner_id.in_(inbound_agents))
+            clauses.append(Message.owner_id.in_(inbound_agent_ids()))
         if not clauses:
             raise forbidden()
         return stmt.where(or_(*clauses))

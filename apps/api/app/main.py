@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 
-from app.routers import auth, contacts, groups, users
+from app.routers import auth, contacts, groups, messages, users
 
 app = FastAPI(title="Comm Center API")
 app.include_router(auth.router)
 app.include_router(contacts.router)
 app.include_router(groups.router)
+app.include_router(messages.router)
 app.include_router(users.router)
 
 
