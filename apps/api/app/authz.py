@@ -48,7 +48,7 @@ def is_subset(wanted: Iterable[PermissionPair], held: Iterable[PermissionPair]) 
     return set(wanted) <= covered
 
 
-def _permissions_of(db: Session, group_ids_stmt) -> dict[int, set[PermissionPair]]:
+def group_permissions(db: Session, group_ids_stmt) -> dict[int, set[PermissionPair]]:
     """Effective permissions per group (own plus all descendants) for the groups selected."""
     ancestor = aliased(AccessGroup)
     rows = db.execute(
@@ -71,7 +71,7 @@ def effective_permissions(db: Session, user_id: int) -> frozenset[PermissionPair
     """Union over the user's groups; read from the database on every call (never cached)."""
     stmt = select(UserGroup.group_id).where(UserGroup.user_id == user_id)
     perms: set[PermissionPair] = set()
-    for group_perms in _permissions_of(db, stmt).values():
+    for group_perms in group_permissions(db, stmt).values():
         perms |= group_perms
     return frozenset(perms)
 
@@ -87,7 +87,7 @@ def check_assignable_groups(db: Session, caller: AuthUser, group_ids: Iterable[i
     known = set(db.scalars(select(AccessGroup.id).where(AccessGroup.id.in_(wanted))))
     if known != wanted:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown group")
-    per_group = _permissions_of(db, wanted)
+    per_group = group_permissions(db, wanted)
     for group_id in wanted:
         if not is_subset(per_group.get(group_id, set()), caller.permissions):
             raise HTTPException(

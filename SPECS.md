@@ -230,7 +230,7 @@ Still open:
 
 **Phase 2: Authentication and authorization.** Login/logout/`/auth/me` with JWT access + refresh; `require(resource, action)` and `scope(query, user, resource)` (message visibility rule, `update`/`delete` follow read scope, group-subset escalation check); `/auth/me` profile endpoints; a permission test matrix covering each seed role against each endpoint and scope.
 
-**Phase 3: Users, contacts and groups API.** CRUD with phone handling, pagination, filter and sort; `GET /groups`; group assignment in user create/update; delete rules (contact linked to an active user cannot be deleted).
+**Phase 3: Users, contacts and groups API** (done, see outcomes below). CRUD with phone handling, pagination, filter and sort; `GET /groups`; group assignment in user create/update; delete rules (contact linked to an active user cannot be deleted).
 
 **Phase 4: Messages API.** `POST /messages/send` (enqueue with snapshot `phone_number`); `GET /messages` with computed `direction`, tabs and scoped counts; `DELETE /messages/{id}`.
 
@@ -258,3 +258,12 @@ Still open:
 - **Bootstrap:** `pnpm --filter @comm-center/api create-admin --username NAME` (`python -m app.cli create-admin`) creates a human in the `admin` group, owned by `system`. It refuses once any human user exists.
 - **Matrix:** `tests/api/test_permission_matrix.py` checks each seed role against every `(resource, action)` through `require` and against message and contact read scope, with expected values written by hand from section 4.6. Business endpoints arrive in Phases 3 and 4 and will reuse the same helpers; their per-endpoint rows join the matrix then.
 - **Not done here (Phase 7):** login rate limiting.
+
+### Phase 3 outcomes (implementation notes)
+
+- **Endpoints:** `GET|POST /contacts`, `GET|PUT|DELETE /contacts/{id}`, the same for `/users`, and `GET /groups`. Every list returns the `items`/`total`/`page`/`page_size` envelope (`page_size` 1 to 100, default 20), with `total` computed from the same scoped query. Out-of-scope or soft-deleted rows return 404 (not 403) so existence does not leak; a caller with no read permission on the resource gets 403.
+- **Filter and sort (answers open question 1 for now):** contacts: `q` (name, email or phone, literal substring), `type`, `sort` = `name|created_at|updated_at`; users: `q` (username or name), `is_active`, `sort` = `username|created_at`; both take `order=asc|desc` and break ties by id. Groups are sorted by name. Unknown sort columns are a 422.
+- **Contacts:** `PUT` is a full update of name/type/email/notes; `phones` omitted leaves numbers alone, a list replaces them (shared with `/auth/me/phones` in `app/contact_ops.py`). `owner_id` is never read from the body. Responses carry `user_id` (the active user linked to the contact). A contact linked to an active user cannot be deleted (409) or switched to `entity`; deleting soft-deletes its phones in the same transaction, which frees the numbers.
+- **Users:** `POST` takes `username`, `password`, optional `is_active`, `group_ids`, and exactly one of `contact_id` (link an existing contact, which needs read access to it) or `contact` (create one, which needs `contacts:create`; the new contact is owned by the caller). `PUT` fields are optional: `username`, `is_active`, `group_ids` need `users:update`; `name`, `email`, `phones` need `contacts:update` on the linked contact (`email: null` clears it). `group_ids` replaces the set after the escalation check. System agents are invisible here (404). A caller cannot delete or deactivate themselves (409). Deleting a user soft-deletes it, revokes its refresh tokens and leaves the contact in place. Duplicate username or already-linked contact is 409. A username is reusable after a soft delete (the unique index ignores deleted rows), which settles open question 4 as "yes".
+- **Not in this phase:** admin password reset (an admin sets the initial password only; users change it via `/auth/me/password`), restore endpoints (open question 3), and removing groups from a user the caller could not have assigned them to (not restricted by the spec).
+- **Tests:** `tests/api/test_contacts.py`, `test_users.py`, `test_groups.py`, plus `test_endpoint_matrix.py` (each seed role against each endpoint).

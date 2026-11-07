@@ -12,7 +12,20 @@ from app.models.identity import Contact, ContactPhone, User
 from app.models.messaging import GsmDevice, Message
 
 __all__ = [
-    "AccessGroup", "Base", "Contact", "ContactPhone", "GroupClosure", "GroupGroup",
-    "GroupPermission", "GsmDevice", "Message", "OwnedMixin", "Permission", "RefreshToken", "SoftDeleteMixin",
-    "TimestampMixin", "User", "UserGroup",
+    "AccessGroup",
+    "Base",
+    "Contact",
+    "ContactPhone",
+    "GroupClosure",
+    "GroupGroup",
+    "GroupPermission",
+    "GsmDevice",
+    "Message",
+    "OwnedMixin",
+    "Permission",
+    "RefreshToken",
+    "SoftDeleteMixin",
+    "TimestampMixin",
+    "User",
+    "UserGroup",
 ]

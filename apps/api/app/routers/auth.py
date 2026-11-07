@@ -1,23 +1,21 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import security
 from app.authz import AuthUser
+from app.clock import utcnow
 from app.config import settings
+from app.contact_ops import replace_phones as replace_contact_phones
 from app.db import get_db
 from app.deps import can_log_in, get_current_user, get_current_user_row, unauthorized
 from app.models import Contact, ContactPhone, RefreshToken, User
-from app.phones import normalize_e164
+from app.schemas import PhoneIn, PhoneOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)  # the database stores naive UTC
 
 
 class LoginRequest(BaseModel):
@@ -34,26 +32,6 @@ class TokenPair(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
-
-
-class PhoneIn(BaseModel):
-    phone: str
-    label: str | None = Field(default=None, max_length=32)
-    is_primary: bool = False
-
-    @field_validator("phone")
-    @classmethod
-    def _normalize(cls, value: str) -> str:
-        try:
-            return normalize_e164(value)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from None
-
-
-class PhoneOut(BaseModel):
-    phone: str
-    label: str | None
-    is_primary: bool
 
 
 class MeOut(BaseModel):
@@ -88,7 +66,7 @@ def _issue_tokens(db: Session, user_id: int) -> TokenPair:
         RefreshToken(
             jti=jti,
             user_id=user_id,
-            expires_at=_now() + timedelta(seconds=settings.refresh_token_ttl_seconds),
+            expires_at=utcnow() + timedelta(seconds=settings.refresh_token_ttl_seconds),
         )
     )
     db.commit()
@@ -101,7 +79,7 @@ def _revoke_all(db: Session, user_id: int) -> None:
     db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
-        .values(revoked_at=_now())
+        .values(revoked_at=utcnow())
     )
 
 
@@ -136,7 +114,7 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
     user = db.scalars(select(User).where(User.id == stored.user_id)).one_or_none()
     if not can_log_in(user):
         raise unauthorized()
-    stored.revoked_at = _now()
+    stored.revoked_at = utcnow()
     return _issue_tokens(db, user.id)
 
 
@@ -150,7 +128,7 @@ def logout(body: RefreshRequest, db: Session = Depends(get_db)) -> Response:
     db.execute(
         update(RefreshToken)
         .where(RefreshToken.jti == claims["jti"], RefreshToken.revoked_at.is_(None))
-        .values(revoked_at=_now())
+        .values(revoked_at=utcnow())
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -161,7 +139,9 @@ def _me(db: Session, user: User, auth: AuthUser) -> MeOut:
 
     contact = db.get(Contact, user.contact_id)
     phones = db.scalars(
-        select(ContactPhone).where(ContactPhone.contact_id == user.contact_id).order_by(ContactPhone.id)
+        select(ContactPhone)
+        .where(ContactPhone.contact_id == user.contact_id)
+        .order_by(ContactPhone.id)
     )
     groups = db.scalars(
         select(AccessGroup.name)
@@ -174,7 +154,9 @@ def _me(db: Session, user: User, auth: AuthUser) -> MeOut:
         username=user.username,
         name=contact.name,
         email=contact.email,
-        phones=[PhoneOut(phone=p.phone_e164, label=p.label, is_primary=p.is_primary) for p in phones],
+        phones=[
+            PhoneOut(phone=p.phone_e164, label=p.label, is_primary=p.is_primary) for p in phones
+        ],
         groups=list(groups),
         permissions=sorted(f"{r}:{a}" for r, a in auth.permissions),
     )
@@ -216,43 +198,8 @@ def replace_phones(
     db: Session = Depends(get_db),
 ) -> MeOut:
     """Replace the caller's phone list: absent numbers are soft-deleted, new ones added."""
-    numbers = [p.phone for p in body.phones]
-    if len(set(numbers)) != len(numbers):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "duplicate phone number")
-    if sum(p.is_primary for p in body.phones) > 1:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "only one primary phone")
-
-    existing = {
-        p.phone_e164: p
-        for p in db.scalars(select(ContactPhone).where(ContactPhone.contact_id == user.contact_id))
-    }
-    now = _now()
-    for number, row in existing.items():
-        if number not in numbers:
-            row.deleted_at = now
-        else:
-            row.is_primary = False
-    db.flush()  # free the old primary and removed numbers before inserting
-    for item in body.phones:
-        row = existing.get(item.phone)
-        if row is None:
-            db.add(
-                ContactPhone(
-                    contact_id=user.contact_id,
-                    phone_e164=item.phone,
-                    label=item.label,
-                    is_primary=item.is_primary,
-                )
-            )
-        else:
-            row.label, row.is_primary = item.label, item.is_primary
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        if "uq_contact_phone_active_phone" in str(exc):
-            raise HTTPException(status.HTTP_409_CONFLICT, "phone number already in use") from None
-        raise
+    replace_contact_phones(db, user.contact_id, body.phones)
+    db.commit()
     return _me(db, user, auth)
 
 
