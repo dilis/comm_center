@@ -208,7 +208,7 @@ Resolved (authorization): single `update`/`delete` scoped by the caller's read p
 
 Still open:
 1. Which columns need filtering/sorting on each table page?
-2. Retry/backoff expectations and whether `delivered` status is required.
+2. ~~Retry/backoff expectations and whether `delivered` status is required.~~ Settled in Phase 5: 3 attempts with doubling backoff; `delivered` is not produced (revisit when a real modem reports delivery).
 3. Is restore needed in the UI?
 4. Can `username` be reused after a soft delete?
 5. Seed/dev data strategy beyond the required system rows.
@@ -234,7 +234,7 @@ Still open:
 
 **Phase 4: Messages API** (done, see outcomes below). `POST /messages/send` (enqueue with snapshot `phone_number`); `GET /messages` with computed `direction`, tabs and scoped counts; `DELETE /messages/{id}`.
 
-**Phase 5: GSM worker.** `ChannelProvider` interface and a fake provider; outbound claim loop (`SKIP LOCKED`, retries); inbound polling with find-or-create contact and duplicate-key race handling; then the real modem provider once hardware is available.
+**Phase 5: GSM worker** (done except the real modem provider, see outcomes below). `ChannelProvider` interface and a fake provider; outbound claim loop (`SKIP LOCKED`, retries); inbound polling with find-or-create contact and duplicate-key race handling; then the real modem provider once hardware is available.
 
 **Phase 6: Frontend** (can start after Phase 2 and run alongside 3 to 5). App shell, login, route guards, permission-aware UI; shared `DataTable`; Users, Contacts, Messages pages; typed API client generated from FastAPI's OpenAPI schema.
 
@@ -276,3 +276,14 @@ Still open:
 - **Computed fields:** every message carries `direction` (`app/messaging.py:derive_direction`), `contact_name`, and `gsm_device_id` (stored for outbound, derived from the receiving agent's `GsmDevice` for inbound). Owners and contacts are read including soft-deleted rows, so history survives deleting a user or contact. The `sent`/`received` filter uses a subquery on inbound agents rather than a join on `users`, for the same reason.
 - **Delete:** soft, needs `messages:delete`, and only for messages the caller can read (404 otherwise). A `queued` or `sending` message can be deleted too; the Phase 5 worker must skip rows with `deleted_at` set when it claims work and must not resurrect them.
 - **Tests:** `tests/test_messaging_logic.py` (direction), `tests/api/test_messages.py`, and message rows in `tests/api/test_endpoint_matrix.py`.
+
+### Phase 5 outcomes (implementation notes)
+
+- **Layout:** `apps/api/app/worker/`: `provider.py` (the `ChannelProvider` protocol: `send`, `poll_inbound`, `acknowledge`, `close`; `ProviderError` is retried, `PermanentSendError` is not), `fake.py`, `outbound.py`, `inbound.py`, `runner.py` (`DeviceWorker`, one loop per device), `__main__.py` (`python -m app.worker --provider fake`, one thread per registered device, SIGTERM/SIGINT stop it cleanly). The worker is its own process and never part of the API.
+- **Outbound:** `claim_next` takes the oldest `queued` live message with `SELECT … FOR UPDATE SKIP LOCKED`, marks it `sending` and stores `gsm_device_id`. It sends to the message's `phone_number` snapshot. Transient errors are retried up to `WORKER_MAX_ATTEMPTS` (3) with waits of base, 2×base, … (`WORKER_BACKOFF_BASE_SECONDS`, 2 s), then the message is `failed` with the error text; a permanent error fails it at once; an unexpected exception fails it too, so nothing is left stuck in `sending`. Final status is written with a core `UPDATE`, so it also lands on a message deleted mid-send. No attempts column was needed: retries happen inside one claim.
+- **Crash handling `[DECIDED]`:** on start, a device's own `sending` messages are marked `failed` ("delivery unknown") rather than re-queued, since they may already have gone out and re-sending would duplicate an SMS.
+- **Inbound:** the sender is normalized to E.164 and looked up among live phones; an unknown sender gets a contact named after the number (type `person`, primary phone), owned by the device's inbound agent, created inside a savepoint. If the unique index rejects it (another writer won), the savepoint is rolled back and the winner's contact is re-read. The message is owned by the agent, status `received`, `received_at` from the modem, `gsm_device_id` left null (derived). A soft-deleted contact's number gets a new contact. The modem copy is acknowledged (deleted) only after the commit, so a crash re-delivers instead of losing; a message that fails to store is left on the modem. **Limitation:** a sender that is not a phone number (alphanumeric sender IDs such as promotional names) cannot satisfy the E.164 constraint, so it is logged and dropped.
+- **Device lifecycle:** `register-device` (`app/devices.py`, `pnpm --filter @comm-center/api register-device --name … --serial-port … --phone …`) creates the entity contact, the `gsm-<name>` inbound system agent and the `GsmDevice`, all owned by `system`. `gsm_device.status` is `online` after a good cycle, `error` when polling fails (queued messages stay queued), `offline` on shutdown. Each cycle sends at most 20 messages before polling inbound again. The worker exits with an error if no device is registered, and a loop stops if its device is removed.
+- **Deployment:** compose service `worker` (profile `worker`, healthcheck on a heartbeat file touched every cycle; depends on `db` and, when enabled, `api`). It runs the **fake provider only**, which logs sends but marks them `sent`, so it must not be used where real messages matter. Settings `WORKER_*` are in `.env.example` and `docs/DEPLOYMENT.md`.
+- **Not done:** the real modem provider (needs hardware: AT commands over pyserial or python-gsmmodem-new, delivery reports, signal checks). It only has to implement `ChannelProvider` and be added to the `--provider` choices; passing the serial device into the container is noted in the compose file.
+- **Tests:** `tests/test_worker_unit.py` (backoff, fake provider, CLI), `tests/worker/` (registration, claim order and filters, retry and backoff, permanent and unexpected errors, delete during send, `SKIP LOCKED` with a held lock, two concurrent workers sending each message exactly once, crash recovery, inbound find-or-create, the duplicate-key race, ack-after-commit, the runner loop). These tests commit for real and clean up after themselves.

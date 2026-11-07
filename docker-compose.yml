@@ -33,6 +33,32 @@ services:
       db:
         condition: service_healthy
 
+  # The GSM worker owns the serial ports, so it is a process of its own, never part of the API.
+  # Profile `worker`: start it with `docker compose --profile app --profile worker up -d --wait`.
+  # Only the fake provider exists so far: it LOGS sends instead of transmitting them, so do not
+  # run it where real messages matter. The real modem provider also needs the serial device
+  # passed through (`devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]`) once the hardware is available.
+  worker:
+    profiles: ["worker"]
+    build: ./apps/api
+    command: ["/opt/venv/bin/python", "-m", "app.worker", "--provider", "fake"]
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
+      WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
+    healthcheck:
+      # Healthy while the loops keep touching the heartbeat file (the API runs the migrations).
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.heartbeat')<60 else 1)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+        required: false  # waits for the API (it runs the migrations) when that profile is on
+
   web:
     profiles: ["app"]
     build:

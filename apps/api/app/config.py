@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     # Region used to read phone numbers typed without a country code.
     default_phone_region: str = "PH"
 
+    # GSM worker (a separate process, see docs/DEPLOYMENT.md).
+    worker_poll_interval_seconds: float = 2.0  # idle wait between cycles
+    worker_max_attempts: int = 3  # sends per message before it is marked failed
+    worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
+    worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched every cycle
+
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
 
 

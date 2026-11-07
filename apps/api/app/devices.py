@@ -1,0 +1,53 @@
+"""Register a GSM device: its inbound system agent, the agent's contact and the device row."""
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.bootstrap import SYSTEM_USER_ID
+from app.models import Contact, GsmDevice, User
+from app.phones import normalize_e164
+
+
+class DeviceError(Exception):
+    pass
+
+
+def register_device(db: Session, name: str, serial_port: str, phone_number: str) -> GsmDevice:
+    """Create ``gsm-<name>`` (an inbound system agent that owns what the device receives) and the
+    device itself, both owned by ``system``. Commits; raises ``DeviceError`` on bad input."""
+    try:
+        number = normalize_e164(phone_number)
+    except ValueError:
+        raise DeviceError(f"invalid phone number: {phone_number!r}") from None
+    if not name.strip() or not serial_port.strip():
+        raise DeviceError("name and serial port are required")
+    username = f"gsm-{name}"
+    try:
+        contact = Contact(name=username, type="entity", owner_id=SYSTEM_USER_ID)
+        db.add(contact)
+        db.flush()
+        agent = User(
+            contact_id=contact.id,
+            username=username,
+            is_system=True,
+            agent_direction="inbound",
+            login_enabled=False,
+            owner_id=SYSTEM_USER_ID,
+        )
+        db.add(agent)
+        db.flush()
+        device = GsmDevice(
+            name=name,
+            serial_port=serial_port,
+            phone_number=number,
+            agent_user_id=agent.id,
+            owner_id=SYSTEM_USER_ID,
+        )
+        db.add(device)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "uq_users_active_username" in str(exc):
+            raise DeviceError(f"device {name!r} already exists") from None
+        raise
+    return device

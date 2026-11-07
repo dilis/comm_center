@@ -8,7 +8,7 @@ Three ways to run Comm Center. Run the commands from the repo root. Each mode wa
 | [2. Separate processes](#2-separate-processes) | Development, or a host that runs processes directly | container or native install | native processes |
 | [3. Docker Compose](#3-docker-compose) | The simplest full deployment | container | containers |
 
-> **Current scope:** the API exposes only `GET /health` and the web app is a placeholder page. Authentication, the first-admin command and the business endpoints arrive in later phases, so a fresh deployment has the schema and seed data but no human user and no secrets such as a JWT key. This guide gains those steps then.
+> **Current scope:** the API serves `/health`, authentication, users, contacts, groups and messages, and there is a GSM worker (fake provider only until a modem is attached). The web app is still a placeholder page. A fresh deployment has the schema and seed data but no human user: create the first admin as described below.
 
 ## Environment variables
 
@@ -23,6 +23,7 @@ The same few variables drive every mode.
 | `DATABASE_URL` | API | SQLAlchemy URL, `mysql+pymysql://USER:PASSWORD@HOST:PORT/DATABASE` | the dev values on `127.0.0.1:3307` |
 | `JWT_SECRET` | API | Signs access and refresh tokens; use a long random value outside development (`openssl rand -hex 32`). Changing it logs everyone out. | a dev-only value |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `DEFAULT_PHONE_REGION` | API | Optional: token lifetimes and the region used to read phone numbers typed without a country code | `900`, `604800`, `PH` |
+| `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | GSM worker | Optional: idle wait between cycles, sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched every cycle for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
 | `DB_PORT`, `API_PORT`, `WEB_PORT` | Compose only | Host ports for the three services | `3307`, `8000`, `8080` |
 
 Rules:
@@ -189,6 +190,23 @@ Stop: `docker compose --profile app down` keeps the data. `docker compose --prof
 
 To run several copies side by side (for example a test copy), give each its own project name, env file and ports:
 `docker compose -p cc-test --env-file other.env --profile app up -d --wait`.
+
+## GSM worker
+
+The worker sends queued messages and stores received ones. It is a **separate process**, never part of the API, because it owns the modem's serial port: run exactly one worker per set of devices, and never under `--reload`. It uses MySQL as its queue, so it needs the same `DATABASE_URL` as the API and a migrated database.
+
+1. Register each modem once (creates the device and its inbound agent `gsm-<name>`):
+   `pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyUSB0 --phone "+639170000000"`
+   (in the API container: `docker compose exec api /opt/venv/bin/python -m app.cli register-device ...`).
+2. Start the worker: `pnpm --filter @comm-center/api worker -- --provider fake` (native), or `docker compose --profile app --profile worker up -d --wait` (compose, service `worker`, healthy while its heartbeat file is fresh).
+
+**Only the fake provider exists yet.** It logs sends instead of transmitting them (they are still marked `sent`), so do not run it where real messages matter. `--fake-inbox FILE` makes it deliver SMS from a JSON-lines file (`{"from": "+639171234567", "text": "hi"}` per line) for trying things out. The real modem provider arrives with the hardware; compose will then also need the serial device passed through (`devices:`).
+
+Behaviour to know:
+- A message is attempted up to `WORKER_MAX_ATTEMPTS` times with doubling waits, then marked `failed` with the error. A number the modem rejects outright is failed at once.
+- If the worker dies mid-send, those messages are marked `failed` on the next start (they may already have gone out; re-sending could duplicate them).
+- Received SMS are removed from the modem only after they are stored. A sender that is not a phone number (such as an alphanumeric name) cannot be stored and is dropped with a warning in the log.
+- Device status (`online`, `offline`, `error`) is kept in `gsm_device.status`.
 
 ## Troubleshooting
 
