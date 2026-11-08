@@ -325,6 +325,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/{message_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Message Read
+         * @description Mark a received message read for the caller only. Idempotent, and harmless for a sent
+         *     message (which is never unread).
+         */
+        post: operations["mark_message_read_messages__message_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/{message_id}/reply": {
         parameters: {
             query?: never;
@@ -615,6 +636,8 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "sending" | "sent" | "failed" | "delivered" | "received";
+            /** Unread */
+            unread: boolean;
         };
         /** Page[ContactOut] */
         Page_ContactOut_: {
@@ -1439,6 +1462,35 @@ export interface operations {
         };
     };
     delete_message_messages__message_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_message_read_messages__message_id__read_post: {
         parameters: {
             query?: never;
             header?: never;

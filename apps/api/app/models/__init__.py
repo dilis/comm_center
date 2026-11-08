@@ -9,7 +9,7 @@ from app.models.authz import (
 )
 from app.models.base import Base, OwnedMixin, SoftDeleteMixin, TimestampMixin
 from app.models.identity import Contact, ContactPhone, User
-from app.models.messaging import GsmDevice, Message
+from app.models.messaging import GsmDevice, Message, MessageRead
 
 __all__ = [
     "AccessGroup",
@@ -22,6 +22,7 @@ __all__ = [
     "GsmDevice",
     "LoginAttempt",
     "Message",
+    "MessageRead",
     "OwnedMixin",
     "Permission",
     "RefreshToken",

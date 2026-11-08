@@ -11,11 +11,11 @@ import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
-  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin",
+  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin", unread: false,
   gsm_device_id: null, reply_to_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
 };
 const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
-const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, owner_name: "gsm-modem1", content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
+const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, owner_name: "gsm-modem1", unread: true, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
 const failed = { ...base, id: 3, direction: "outbound", content: "never arrives", status: "failed", error_message: "no signal" };
 const queued = { ...base, id: 4, direction: "outbound", content: "waiting", status: "queued" };
 
@@ -179,6 +179,45 @@ describe("list", () => {
     const dialog = await screen.findByRole("dialog", { name: "Message" });
     expect(within(dialog).getByText(formatDateTime(recent.created_at))).toBeInTheDocument();
     expect(within(dialog).queryByText(/ago|just now/)).not.toBeInTheDocument();
+  });
+
+  test("unread received messages are bold; read and sent ones are regular", async () => {
+    const readIncoming = { ...incoming, id: 9, content: "already read", unread: false };
+    backend([out, incoming, readIncoming]);
+    await open();
+    const row = (text: string) => screen.getByText(text).closest("tr")!;
+    await screen.findByText("hi from Ana");
+    expect(screen.getByText("hi from Ana")).toHaveClass("font-semibold");
+    expect(within(row("hi from Ana")).getByRole("img", { name: "Unread" })).toBeInTheDocument();
+    expect(screen.getByText("already read")).not.toHaveClass("font-semibold");
+    expect(screen.getByText("hello Ana")).not.toHaveClass("font-semibold");
+    expect(screen.getAllByRole("img", { name: "Unread" })).toHaveLength(1);
+  });
+
+  test("opening an unread message marks it read for you, and the list follows", async () => {
+    let unread = true;
+    let marked = 0;
+    server.use(
+      http.get("*/api/messages", () => HttpResponse.json(page([{ ...incoming, unread }]))),
+      http.post("*/api/messages/2/read", () => ((marked += 1), (unread = false), new HttpResponse(null, { status: 204 }))),
+    );
+    await open();
+    expect(await screen.findByText("hi from Ana")).toHaveClass("font-semibold");
+    await userEvent.click(screen.getByRole("button", { name: "View message 2" }));
+    await waitFor(() => expect(marked).toBe(1));
+    await waitFor(() => expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument());
+    expect(screen.getByText("hi from Ana", { selector: "p.line-clamp-2" })).not.toHaveClass("font-semibold");
+  });
+
+  test("opening a message that is already read does not ask the server again", async () => {
+    let marked = 0;
+    backend([out, { ...incoming, unread: false }]);
+    server.use(http.post("*/api/messages/*/read", () => ((marked += 1), new HttpResponse(null, { status: 204 }))));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 2" }));
+    await screen.findByRole("dialog", { name: "Message" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(marked).toBe(0);
   });
 
   test("the date column flips the sort order", async () => {

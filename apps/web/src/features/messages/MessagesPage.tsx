@@ -98,6 +98,16 @@ export default function MessagesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages"] }),
   });
 
+  // Opening a received message marks it read for this user only (the server keeps it per person).
+  const markRead = useMutation({
+    mutationFn: (message: Message) => unwrap(api.POST("/messages/{message_id}/read", { params: { path: { message_id: message.id } } })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages"] }),
+  });
+  const view = (message: Message) => {
+    setDialog({ kind: "view", message });
+    if (message.unread) markRead.mutate(message);
+  };
+
   const columns: Column<Message>[] = [
     {
       id: "contact",
@@ -106,6 +116,7 @@ export default function MessagesPage() {
         <div>
           <div className="flex items-center gap-1.5 font-medium">
             {direction === "all" && <DirectionArrow message={m} />}
+            {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 rounded-full bg-sky-600" />}
             {m.contact_name}
           </div>
           <div className="text-xs text-muted-foreground">{m.phone_number}</div>
@@ -118,7 +129,7 @@ export default function MessagesPage() {
       id: "content",
       header: "Message",
       className: "max-md:order-last", // last in the stacked phone card
-      cell: (m) => <p className="line-clamp-2 max-w-md whitespace-pre-wrap break-words">{m.content}</p>,
+      cell: (m) => <p className={cn("line-clamp-2 max-w-md whitespace-pre-wrap break-words", m.unread && "font-semibold")}>{m.content}</p>,
     },
     {
       id: "status",
@@ -150,7 +161,7 @@ export default function MessagesPage() {
       hideLabelOnMobile: true,
       cell: (m) => (
         <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => setDialog({ kind: "view", message: m })}>
+          <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => view(m)}>
             <Eye className="h-4 w-4" aria-hidden />
           </Button>
           {canReply(m) && (
