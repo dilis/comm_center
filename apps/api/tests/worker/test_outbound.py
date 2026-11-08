@@ -169,3 +169,16 @@ def test_recover_interrupted_fails_only_this_devices_sending_rows(
     assert row(session_factory, theirs).status == "sending"
     assert row(session_factory, waiting).status == "queued"
     _ = pytest
+
+
+def test_a_send_that_keeps_failing_is_recorded_on_the_device(
+    session_factory, commit, ana, provider, device, sleep
+):
+    queue(commit, ana)
+    provider.send_errors.extend([ProviderError("no network")] * 3)
+    send_one(session_factory, provider, device.id, POLICY, sleep)
+    with session_factory() as db:
+        error = db.execute(
+            text("SELECT last_error FROM gsm_device WHERE id=:i"), {"i": device.id}
+        ).scalar_one()
+    assert error == "no network"

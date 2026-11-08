@@ -23,3 +23,20 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
     )
+
+
+class LoginAttempt(Base):
+    """A failed sign-in, kept briefly to rate limit by username and by client address."""
+
+    __tablename__ = "login_attempt"
+    __table_args__ = (
+        Index("ix_login_attempt_username_created_at", "username", "created_at"),
+        Index("ix_login_attempt_ip_created_at", "ip", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False)  # normalized, may not exist
+    ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )

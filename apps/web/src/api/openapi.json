@@ -287,6 +287,64 @@
         "title": "Counts",
         "type": "object"
       },
+      "DeviceOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone_number": {
+            "title": "Phone Number",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "offline",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "phone_number",
+          "status",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "DeviceOut",
+        "type": "object"
+      },
       "GroupOut": {
         "properties": {
           "id": {
@@ -1759,6 +1817,37 @@
         "summary": "Update Contact",
         "tags": [
           "contacts"
+        ]
+      }
+    },
+    "/devices": {
+      "get": {
+        "description": "Modem health for people who may read every message. Devices are registered from the\ncommand line, never through the API.",
+        "operationId": "list_devices_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceOut"
+                  },
+                  "title": "Response List Devices Devices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Devices",
+        "tags": [
+          "devices"
         ]
       }
     },

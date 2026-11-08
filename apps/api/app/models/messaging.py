@@ -36,6 +36,9 @@ class GsmDevice(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         server_default="offline",
     )
     agent_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    # The latest modem problem, kept after recovery so people can see what went wrong and when.
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):

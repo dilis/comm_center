@@ -9,11 +9,12 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import utcnow
-from app.models import Message
+from app.models import GsmDevice, Message
 from app.worker.provider import ChannelProvider, PermanentSendError, ProviderError
 
 log = logging.getLogger(__name__)
 MAX_ERROR_LENGTH = 1000
+MAX_DEVICE_ERROR_LENGTH = 500  # the width of gsm_device.last_error
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,20 @@ def _finish(
         db.commit()
 
 
+def record_device_error(session_factory: sessionmaker, device_id: int, error: str) -> None:
+    """Keep the latest modem problem on the device so it shows up in ``GET /devices``."""
+    try:
+        with session_factory() as db:
+            db.execute(
+                update(GsmDevice)
+                .where(GsmDevice.id == device_id)
+                .values(last_error=error[:MAX_DEVICE_ERROR_LENGTH], last_error_at=utcnow())
+            )
+            db.commit()
+    except Exception:  # health reporting must never stop the worker
+        log.exception("device %s: could not record the modem error", device_id)
+
+
 def send_one(
     session_factory: sessionmaker,
     provider: ChannelProvider,
@@ -89,6 +104,7 @@ def send_one(
             except ProviderError as exc:
                 if attempt == policy.max_attempts:
                     _finish(session_factory, claimed.id, "failed", str(exc))
+                    record_device_error(session_factory, device_id, str(exc))
                     log.warning("message %s failed after %s attempts: %s", claimed.id, attempt, exc)
                     return True
                 log.info("message %s attempt %s failed (%s); retrying", claimed.id, attempt, exc)

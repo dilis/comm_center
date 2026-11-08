@@ -14,6 +14,7 @@ from pathlib import Path
 from app.config import settings
 from app.db import SessionLocal
 from app.devices import ensure_fake_device
+from app.logging_config import configure_logging
 from app.worker.fake import FakeProvider
 from app.worker.outbound import RetryPolicy
 from app.worker.runner import DeviceWorker
@@ -34,9 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fake-inbox", type=Path, help="fake provider: JSON-lines file of inbound SMS"
     )
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging(settings.log_level)
 
     log.warning("FAKE provider: messages are marked sent but NOT transmitted by any modem")
     with SessionLocal() as db:

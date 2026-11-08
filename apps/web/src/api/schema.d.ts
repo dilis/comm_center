@@ -172,6 +172,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Devices
+         * @description Modem health for people who may read every message. Devices are registered from the
+         *     command line, never through the API.
+         */
+        get: operations["list_devices_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -463,6 +484,24 @@ export interface components {
             received: number;
             /** Sent */
             sent: number;
+        };
+        /** DeviceOut */
+        DeviceOut: {
+            /** Id */
+            id: number;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Name */
+            name: string;
+            /** Phone Number */
+            phone_number: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "online" | "offline" | "error";
         };
         /** GroupOut */
         GroupOut: {
@@ -1142,6 +1181,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_devices_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceOut"][];
                 };
             };
         };

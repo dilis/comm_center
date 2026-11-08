@@ -1,4 +1,4 @@
-from app.models.auth import RefreshToken
+from app.models.auth import LoginAttempt, RefreshToken
 from app.models.authz import (
     AccessGroup,
     GroupClosure,
@@ -20,6 +20,7 @@ __all__ = [
     "GroupGroup",
     "GroupPermission",
     "GsmDevice",
+    "LoginAttempt",
     "Message",
     "OwnedMixin",
     "Permission",

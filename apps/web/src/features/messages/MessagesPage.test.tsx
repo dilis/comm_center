@@ -658,3 +658,42 @@ describe("view and delete", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("message not found");
   });
 });
+
+
+describe("modem health", () => {
+  const device = { id: 1, name: "m1", phone_number: "+639170000000", status: "online", last_error: null, last_error_at: null };
+  const devices = (items: unknown[]) => server.use(http.get("*/api/devices", () => HttpResponse.json(items)));
+
+  test("a modem in error is called out with its last error", async () => {
+    backend();
+    devices([{ ...device, status: "error", last_error: "serial port gone", last_error_at: "2026-11-09T08:00:00" }]);
+    await open();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("m1");
+    expect(alert).toHaveTextContent("serial port gone");
+  });
+
+  test("an offline modem warns that queued messages will wait", async () => {
+    backend();
+    devices([{ ...device, status: "offline" }]);
+    await open();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/offline/i);
+  });
+
+  test("healthy modems show nothing, even with an old error on record", async () => {
+    backend();
+    devices([{ ...device, last_error: "old problem", last_error_at: "2026-11-01T08:00:00" }]);
+    await open();
+    await screen.findByText("hello Ana");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("people who cannot read every message are not shown (or asked for) modem health", async () => {
+    backend();
+    let asked = false;
+    server.use(http.get("*/api/devices", () => { asked = true; return HttpResponse.json([]); }));
+    await open("agent");
+    await screen.findByRole("heading", { name: "Messages" });
+    expect(asked).toBe(false);
+  });
+});

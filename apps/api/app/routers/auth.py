@@ -1,11 +1,12 @@
+import logging
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app import security
+from app import login_limits, security
 from app.authz import AuthUser
 from app.clock import utcnow
 from app.config import settings
@@ -15,6 +16,7 @@ from app.deps import can_log_in, get_current_user, get_current_user_row, unautho
 from app.models import Contact, ContactPhone, RefreshToken, User
 from app.schemas import PhoneIn, PhoneOut
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -84,13 +86,25 @@ def _revoke_all(db: Session, user_id: int) -> None:
 
 
 @router.post("/login", response_model=TokenPair)
-def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenPair:
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
+    ip = request.client.host if request.client else "unknown"
+    wait = login_limits.blocked_for(db, body.username, ip)
+    if wait:
+        log.warning("login blocked for %r from %s: too many failures", body.username[:64], ip)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many failed sign-in attempts; try again later",
+            headers={"Retry-After": str(wait)},
+        )
     user = db.scalars(select(User).where(User.username == body.username)).one_or_none()
     # Always verify a hash so the response time does not reveal whether the username exists.
     hash_ = user.password_hash if user and user.password_hash else security.DUMMY_HASH
     valid = security.verify_password(hash_, body.password)
     if not (valid and can_log_in(user)):
+        login_limits.record_failure(db, body.username, ip)
+        log.warning("failed login for %r from %s", body.username[:64], ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
+    login_limits.forget_failures(db, body.username)
     return _issue_tokens(db, user.id)
 
 

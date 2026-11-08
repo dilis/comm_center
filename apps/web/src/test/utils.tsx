@@ -70,6 +70,7 @@ export function emptyBackend() {
     http.get("*/api/contacts", () => HttpResponse.json(page([]))),
     http.get("*/api/users", () => HttpResponse.json(page([]))),
     http.get("*/api/groups", () => HttpResponse.json(page([]))),
+    http.get("*/api/devices", () => HttpResponse.json([])),
   );
 }
 
