@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerUpLeft, Eye, Plus, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
+import { Tip } from "@/components/ui/tooltip";
 import { useListParams } from "@/lib/useListParams";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatRelative } from "@/lib/utils";
 
 import { POLL } from "./polling";
 import { DeviceAlert } from "./DeviceAlert";
@@ -34,6 +35,19 @@ type Dialog =
 const STATUS_VARIANT = {
   queued: "secondary", sending: "warning", sent: "success", delivered: "success", failed: "destructive", received: "default",
 } as const;
+
+// The same two arrows mark a message's direction in the table and the Sent/Received tabs.
+const SentArrow = ({ className }: { className?: string }) => <ArrowUpRight className={cn("h-4 w-4 text-sky-600", className)} aria-hidden />;
+const ReceivedArrow = ({ className }: { className?: string }) => <ArrowDownLeft className={cn("h-4 w-4 text-emerald-600", className)} aria-hidden />;
+
+/** Which way a message went, for the All tab (the other tabs already say). */
+function DirectionArrow({ message }: { message: Message }) {
+  return (
+    <span role="img" aria-label={directionLabel(message)} title={directionLabel(message)}>
+      {message.direction === "inbound" ? <ReceivedArrow /> : <SentArrow />}
+    </span>
+  );
+}
 
 const pending = (m: Message) => m.status === "queued" || m.status === "sending";
 
@@ -86,22 +100,16 @@ export default function MessagesPage() {
 
   const columns: Column<Message>[] = [
     {
-      id: "direction",
-      header: "Direction",
-      cell: (m) => (
-        <div>
-          <Badge variant="outline">{directionLabel(m)}</Badge>
-          {m.reply_to_id != null && <div className="mt-1 text-xs text-muted-foreground">Reply to #{m.reply_to_id}</div>}
-        </div>
-      ),
-    },
-    {
       id: "contact",
       header: "Contact",
       cell: (m) => (
         <div>
-          <div className="font-medium">{m.contact_name}</div>
+          <div className="flex items-center gap-1.5 font-medium">
+            {direction === "all" && <DirectionArrow message={m} />}
+            {m.contact_name}
+          </div>
           <div className="text-xs text-muted-foreground">{m.phone_number}</div>
+          {m.reply_to_id != null && <div className="mt-1 text-xs text-muted-foreground">Reply to #{m.reply_to_id}</div>}
         </div>
       ),
     },
@@ -122,7 +130,19 @@ export default function MessagesPage() {
         </div>
       ),
     },
-    { id: "date", header: "Date", sortKey: "created_at", cell: (m) => formatDateTime(m.created_at) },
+    {
+      id: "date",
+      header: "Date",
+      sortKey: "created_at",
+      // Humanized for scanning; the exact time is on hover and in the message's details.
+      cell: (m) => (
+        <Tip content={formatDateTime(m.created_at)}>
+          <time dateTime={m.created_at} tabIndex={0} className="cursor-default underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
+            {formatRelative(m.created_at)}
+          </time>
+        </Tip>
+      ),
+    },
     {
       id: "actions",
       header: "Actions",
@@ -169,8 +189,8 @@ export default function MessagesPage() {
           onChange={(v) => list.setFilter("direction", v === "all" ? "" : v)}
           items={[
             { value: "all", label: "All", count: counts.data?.all },
-            { value: "sent", label: "Sent", count: counts.data?.sent },
-            { value: "received", label: "Received", count: counts.data?.received },
+            { value: "sent", label: "Sent", icon: <SentArrow />, count: counts.data?.sent },
+            { value: "received", label: "Received", icon: <ReceivedArrow />, count: counts.data?.received },
           ]}
         />
         <SearchBox label="Search messages" placeholder="Search text or number" value={q} onChange={(v) => list.setFilter("q", v)} />
@@ -200,6 +220,8 @@ export default function MessagesPage() {
         error={query.isError && (!query.data || query.isPlaceholderData) ? errorMessage(query.error) : null}
         emptyMessage="No messages found."
         getRowId={(m) => m.id}
+        // Outgoing messages the modem has not finished with are dimmed until they are sent.
+        rowClassName={(m) => (m.direction === "outbound" && pending(m) ? "opacity-60" : undefined)}
         onPageChange={list.setPage}
         onPageSizeChange={list.setPageSize}
         onSortChange={(_, order) => list.setSort("created_at", order)}

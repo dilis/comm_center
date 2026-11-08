@@ -4,6 +4,9 @@ import { http, HttpResponse } from "msw";
 
 import { server } from "@/test/server";
 
+import { TIP } from "@/components/ui/tooltip";
+import { formatDateTime } from "@/lib/utils";
+
 import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
@@ -44,10 +47,11 @@ describe("list", () => {
     backend();
     await open();
     const row = (await screen.findByText("hello Ana")).closest("tr")!;
-    expect(within(row).getByText("Sent")).toBeInTheDocument();
+    expect(within(row).getByRole("img", { name: "Sent" })).toBeInTheDocument(); // the arrow
     expect(within(row).getByText("Ana Cruz")).toBeInTheDocument();
     expect(within(row).getByText("+639171234567")).toBeInTheDocument();
-    expect(screen.getByText("hi from Ana").closest("tr")).toHaveTextContent("Received");
+    expect(within(screen.getByText("hi from Ana").closest("tr")!).getByRole("img", { name: "Received" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Direction" })).not.toBeInTheDocument();
     const failedRow = screen.getByText("never arrives").closest("tr")!;
     expect(failedRow).toHaveTextContent("failed");
     expect(failedRow).toHaveTextContent("no signal");
@@ -72,6 +76,23 @@ describe("list", () => {
     await open("admin", "/messages?direction=sent");
     expect(await screen.findByRole("columnheader", { name: "Sender" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Owner" })).not.toBeInTheDocument();
+  });
+
+  test("the direction arrows only appear on the All tab", async () => {
+    backend();
+    await open("admin", "/messages?direction=sent");
+    await screen.findByText("hello Ana");
+    expect(screen.queryByRole("img", { name: /Sent|Received/ })).not.toBeInTheDocument();
+  });
+
+  test("the Sent and Received tabs carry the same arrows as the rows, and All has none", async () => {
+    backend();
+    await open();
+    await screen.findByRole("tab", { name: "Sent 2" });
+    const tab = (name: string) => screen.getByRole("tab", { name });
+    expect(tab("Sent 2").querySelector("svg.lucide-arrow-up-right")).not.toBeNull();
+    expect(tab("Received 1").querySelector("svg.lucide-arrow-down-left")).not.toBeNull();
+    expect(tab("All 3").querySelector("svg")).toBeNull();
   });
 
   test("asks for the newest first, on the All tab", async () => {
@@ -106,6 +127,58 @@ describe("list", () => {
     await waitFor(() => expect(lastQuery()).toMatchObject({ status: "failed" }));
     await userEvent.type(screen.getByRole("searchbox", { name: "Search messages" }), "ana");
     await waitFor(() => expect(lastQuery()).toMatchObject({ q: "ana", status: "failed", page: "1" }));
+  });
+
+  test("dates in the table are humanized, with the exact time in a tooltip on hover", async () => {
+    const recent = { ...out, id: 20, content: "just sent", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
+    backend([recent, { ...out, id: 21, content: "ancient", created_at: "2020-01-02T03:04:05" }]);
+    await open();
+    const row = (await screen.findByText("just sent")).closest("tr")!;
+    await userEvent.hover(within(row).getByText("5 minutes ago"));
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent(formatDateTime(recent.created_at));
+    const old = screen.getByText("ancient").closest("tr")!;
+    expect(within(old).getByText(/2020/)).toBeInTheDocument();
+  });
+
+  test("the tooltip waits for the pointer to rest, so passing by shows nothing", async () => {
+    const recent = { ...out, id: 23, content: "passing by", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
+    backend([recent]);
+    await open();
+    const date = within((await screen.findByText("passing by")).closest("tr")!).getByText("5 minutes ago");
+    await userEvent.hover(date);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(); // not at once...
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toBeInTheDocument(); // ...only after resting
+  });
+
+  test("the exact time is also reachable from the keyboard", async () => {
+    const recent = { ...out, id: 22, content: "tab to me", created_at: new Date(Date.now() - 2 * 3_600_000).toISOString().replace("Z", "") };
+    backend([recent]);
+    await open();
+    const row = (await screen.findByText("tab to me")).closest("tr")!;
+    within(row).getByText("2 hours ago").focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(formatDateTime(recent.created_at));
+  });
+
+  test("outgoing messages that have not been sent yet are greyed out", async () => {
+    const sending = { ...out, id: 5, content: "on its way", status: "sending" };
+    const receivedQueuedLooking = { ...incoming, id: 6, content: "inbound", status: "received" };
+    backend([queued, sending, out, failed, receivedQueuedLooking]);
+    await open();
+    await screen.findByText("waiting");
+    const row = (text: string) => screen.getByText(text).closest("tr")!;
+    expect(row("waiting")).toHaveClass("opacity-60");
+    expect(row("on its way")).toHaveClass("opacity-60");
+    for (const text of ["hello Ana", "never arrives", "inbound"]) expect(row(text)).not.toHaveClass("opacity-60");
+  });
+
+  test("a message's details show the exact date and time, not a relative one", async () => {
+    const recent = { ...out, id: 30, content: "exact please", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
+    backend([recent]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 30" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    expect(within(dialog).getByText(formatDateTime(recent.created_at))).toBeInTheDocument();
+    expect(within(dialog).queryByText(/ago|just now/)).not.toBeInTheDocument();
   });
 
   test("the date column flips the sort order", async () => {
