@@ -1206,6 +1206,7 @@ export interface operations {
                 direction?: "all" | "sent" | "received";
                 status?: ("queued" | "sending" | "sent" | "failed" | "delivered" | "received") | null;
                 contact_id?: number | null;
+                reply_to_id?: number | null;
                 q?: string | null;
                 order?: "asc" | "desc";
                 page?: number;

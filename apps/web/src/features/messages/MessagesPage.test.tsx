@@ -579,6 +579,33 @@ describe("reply", () => {
     expect(await within(dialog).findByText("The original message is no longer available.")).toBeInTheDocument();
   });
 
+  test("a received message's details list the replies sent to it", async () => {
+    backend([original]);
+    server.use(http.get("*/api/messages", ({ request }) => {
+      const url = new URL(request.url);
+      return HttpResponse.json(page((url.searchParams.get("reply_to_id") === "2" ? [answer] : [original]) as unknown[]));
+    }));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    expect(await within(dialog).findByText("Yes!")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Replies/)).toBeInTheDocument();
+  });
+
+  test("a received message without replies shows no replies section", async () => {
+    backend([original]);
+    server.use(http.get("*/api/messages", ({ request }) => {
+      const url = new URL(request.url);
+      requests.push(url);
+      return HttpResponse.json(page(url.searchParams.get("reply_to_id") ? [] : [original]));
+    }));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Message" });
+    await waitFor(() => expect(requests.some((u) => u.searchParams.get("reply_to_id") === "2")).toBe(true));
+    expect(within(dialog).queryByText(/Replies/)).not.toBeInTheDocument();
+  });
+
   test("a received message's details offer Reply", async () => {
     backend([original]);
     await open();

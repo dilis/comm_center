@@ -163,6 +163,7 @@ def list_messages(
     direction: Literal["all", "sent", "received"] = "all",
     status: Status | None = None,
     contact_id: int | None = None,
+    reply_to_id: int | None = None,
     q: str | None = None,
     order: SortOrder = "desc",
     params: PageParams = Depends(),
@@ -174,6 +175,8 @@ def list_messages(
         stmt = stmt.where(Message.status == status)
     if contact_id is not None:
         stmt = stmt.where(Message.contact_id == contact_id)
+    if reply_to_id is not None:
+        stmt = stmt.where(Message.reply_to_id == reply_to_id)
     if q:
         stmt = stmt.where(
             Message.content.contains(q, autoescape=True)

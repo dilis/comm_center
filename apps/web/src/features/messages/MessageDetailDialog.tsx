@@ -30,6 +30,32 @@ function InReplyTo({ id }: { id: number }) {
   );
 }
 
+/** Replies sent to a received message (only those the caller may read). */
+function Replies({ id }: { id: number }) {
+  const replies = useQuery({
+    queryKey: ["messages", "replies", id],
+    queryFn: () =>
+      unwrap(api.GET("/messages", { params: { query: { reply_to_id: id, direction: "all", order: "asc", page_size: 50 } } })),
+  });
+  const items = replies.data?.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">Replies ({replies.data?.total})</p>
+      <ul className="max-h-40 space-y-2 overflow-y-auto">
+        {items.map((r) => (
+          <li key={r.id} className="border-l-4 pl-3 text-sm">
+            <p className="whitespace-pre-wrap break-words">{r.content}</p>
+            <p className="text-xs text-muted-foreground">
+              {r.owner_name} · {formatDateTime(r.created_at)} · {r.status}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function MessageDetailDialog({
   message, onClose, onReply,
 }: { message: Message; onClose: () => void; onReply?: () => void }) {
@@ -64,6 +90,7 @@ export function MessageDetailDialog({
         {/* SMS text is untrusted: rendered only as text, never as markup. */}
         <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted p-3 text-sm">{message.content}</p>
         {message.reply_to_id != null && <InReplyTo id={message.reply_to_id} />}
+        {message.direction === "inbound" && <Replies id={message.id} />}
         <DialogFooter>
           {onReply && <Button onClick={onReply}>Reply</Button>}
           <Button variant="outline" onClick={onClose}>

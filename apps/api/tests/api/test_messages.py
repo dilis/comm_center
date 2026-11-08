@@ -360,3 +360,12 @@ def test_messages_name_their_owner(client, h, mailbox, conn):
         ).scalar_one()
         assert by_id[mailbox[key]]["owner_name"] == expected
     assert by_id[mailbox["in1"]]["owner_name"] == "gsm-test"
+
+
+def test_list_can_filter_to_the_replies_of_a_message(client, h, boss, ana, mailbox, conn):
+    reply = make_message(conn, ana, owner_id=boss, content="the answer")
+    conn.execute(text("UPDATE messages SET reply_to_id = :r WHERE id = :i"), {"r": mailbox["in1"], "i": reply})
+    _, ids = listed(client, h, f"reply_to_id={mailbox['in1']}")
+    assert ids == {reply}
+    _, none = listed(client, h, f"reply_to_id={mailbox['in2']}")
+    assert none == set()
