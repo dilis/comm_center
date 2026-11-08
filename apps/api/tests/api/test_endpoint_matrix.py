@@ -39,6 +39,7 @@ ALLOWED = {
     "POST /messages/send": {"admin", "operator", "agent"},
     "POST /messages/send-bulk": {"admin", "operator", "agent"},
     "POST /messages/{m}/reply": {"admin", "operator", "agent"},
+    "POST /messages/{m}/read": {"admin", "operator", "agent", "auditor"},
     "GET /messages/{m}": {"admin", "operator", "agent", "auditor"},
     "DELETE /messages/{m}": {"admin"},
 }

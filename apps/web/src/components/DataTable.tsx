@@ -31,6 +31,8 @@ type Props<T> = {
   error?: string | null;
   emptyMessage?: string;
   getRowId: (row: T) => string | number;
+  /** Extra classes for one row, e.g. to grey it out. */
+  rowClassName?: (row: T) => string | undefined;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   onSortChange?: (key: string, order: "asc" | "desc") => void;
@@ -39,7 +41,7 @@ type Props<T> = {
 /** Server-driven table: the parent owns page, size and sort and fetches accordingly. */
 export function DataTable<T>({
   label, columns, rows, total, page, pageSize, sort, isLoading, error, emptyMessage = "Nothing to show.",
-  getRowId, onPageChange, onPageSizeChange, onSortChange,
+  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange,
 }: Props<T>) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -121,7 +123,7 @@ export function DataTable<T>({
             </TableRow>
           ) : rows && rows.length > 0 ? (
             rows.map((row) => (
-              <TableRow key={getRowId(row)}>
+              <TableRow key={getRowId(row)} className={rowClassName?.(row)}>
                 {columns.map((c) => (
                   <TableCell key={c.id} className={c.className} data-label={c.hideLabelOnMobile ? undefined : c.header}>
                     {c.cell(row)}

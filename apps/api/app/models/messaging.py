@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -68,3 +69,16 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class MessageRead(Base):
+    """A person has read a received message. Per user, kept apart from the immutable message."""
+
+    __tablename__ = "message_read"
+    __table_args__ = (Index("ix_message_read_message_id", "message_id"),)
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    message_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("messages.id"), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )

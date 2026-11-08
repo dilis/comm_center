@@ -599,6 +599,10 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "boolean"
           }
         },
         "required": [
@@ -612,6 +616,7 @@
           "status",
           "owner_id",
           "owner_name",
+          "unread",
           "gsm_device_id",
           "reply_to_id",
           "created_at",
@@ -2302,6 +2307,47 @@
           }
         ],
         "summary": "Read Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/{message_id}/read": {
+      "post": {
+        "description": "Mark a received message read for the caller only. Idempotent, and harmless for a sent\nmessage (which is never unread).",
+        "operationId": "mark_message_read_messages__message_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark Message Read",
         "tags": [
           "messages"
         ]

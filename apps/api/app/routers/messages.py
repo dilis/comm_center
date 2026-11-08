@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
 from app.authz import AuthUser, require, scope
@@ -11,7 +12,7 @@ from app.clock import utcnow
 from app.db import get_db
 from app.deps import get_current_user
 from app.messaging import Direction, derive_direction, inbound_agent_ids
-from app.models import Contact, ContactPhone, GsmDevice, Message, User
+from app.models import Contact, ContactPhone, GsmDevice, Message, MessageRead, User
 from app.pagination import Page, PageParams, paginate
 from app.phones import normalize_e164
 from app.schemas import SortOrder
@@ -36,6 +37,7 @@ class MessageOut(BaseModel):
     status: Status
     owner_id: int
     owner_name: str  # the owner's name: the sender, for a sent message
+    unread: bool  # a received message this caller has not read yet; never true for sent ones
     gsm_device_id: int | None
     reply_to_id: int | None  # for a reply: the received message it answers
     created_at: datetime
@@ -89,7 +91,8 @@ class Counts(BaseModel):
     received: int
 
 
-def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
+def to_out(db: Session, messages: list[Message], viewer_id: int) -> list[MessageOut]:
+    """``viewer_id``: whose point of view the per-person ``unread`` flag takes."""
     if not messages:
         return []
     # Owners and contacts may be soft-deleted while their messages remain, so include them.
@@ -116,6 +119,14 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
             execution_options=keep,
         ).all()
     )
+    read_ids = set(
+        db.scalars(
+            select(MessageRead.message_id).where(
+                MessageRead.user_id == viewer_id,
+                MessageRead.message_id.in_([m.id for m in messages]),
+            )
+        )
+    )
     out = []
     for m in messages:
         owner = owners[m.owner_id]
@@ -125,6 +136,7 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
                 id=m.id, channel=m.channel, direction=direction, contact_id=m.contact_id,
                 contact_name=names[m.contact_id], phone_number=m.phone_number, content=m.content,
                 status=m.status, owner_id=m.owner_id, owner_name=names[owner.contact_id],
+                unread=direction == "inbound" and m.id not in read_ids,
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
                 reply_to_id=m.reply_to_id,
@@ -142,6 +154,12 @@ def get_scoped(db: Session, caller: AuthUser, message_id: int) -> Message:
     if message is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     return message
+
+
+def mark_read(db: Session, user_id: int, message_id: int) -> None:
+    db.execute(
+        mysql_insert(MessageRead).prefix_with("IGNORE").values(user_id=user_id, message_id=message_id)
+    )
 
 
 def by_direction(stmt, direction: Literal["all", "sent", "received"]):
@@ -186,7 +204,7 @@ def list_messages(
     id_column = Message.id.desc() if order == "desc" else Message.id.asc()
     messages, total = paginate(db, stmt, params, column, id_column)
     return Page(
-        items=to_out(db, messages), total=total, page=params.page, page_size=params.page_size
+        items=to_out(db, messages, caller.id), total=total, page=params.page, page_size=params.page_size
     )
 
 
@@ -238,7 +256,7 @@ def send_message(
     )  # fmt: skip
     db.add(message)
     db.commit()
-    return to_out(db, [message])[0]
+    return to_out(db, [message], caller.id)[0]
 
 
 @router.post("/send-bulk", response_model=BulkSendResult, status_code=status.HTTP_201_CREATED)
@@ -284,7 +302,7 @@ def send_bulk(
         )  # fmt: skip
     db.add_all(messages)
     db.commit()
-    return BulkSendResult(queued=to_out(db, messages), skipped=skipped)
+    return BulkSendResult(queued=to_out(db, messages, caller.id), skipped=skipped)
 
 
 @router.post("/{message_id}/reply", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
@@ -320,15 +338,32 @@ def reply_to_message(
         content=text, status="queued", owner_id=caller.id, reply_to_id=original.id,
     )  # fmt: skip
     db.add(message)
+    mark_read(db, caller.id, original.id)  # answering it means it was read
     db.commit()
-    return to_out(db, [message])[0]
+    return to_out(db, [message], caller.id)[0]
+
+
+@router.post("/{message_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_message_read(
+    message_id: int, caller: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Response:
+    """Mark a received message read for the caller only. Idempotent, and harmless for a sent
+    message (which is never unread)."""
+    message = get_scoped(db, caller, message_id)
+    is_received = db.scalar(
+        select(func.count()).where(Message.id == message.id, Message.owner_id.in_(inbound_agent_ids()))
+    )
+    if is_received:
+        mark_read(db, caller.id, message.id)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{message_id}", response_model=MessageOut)
 def read_message(
     message_id: int, caller: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> MessageOut:
-    return to_out(db, [get_scoped(db, caller, message_id)])[0]
+    return to_out(db, [get_scoped(db, caller, message_id)], caller.id)[0]
 
 
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)

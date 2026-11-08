@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 import { cn } from "@/lib/utils";
 
-export type TabItem = { value: string; label: string; count?: number };
+export type TabItem = { value: string; label: string; count?: number; icon?: ReactNode };
 
 /** Link-style tab list (role=tablist). The active panel is rendered by the caller. */
 export function Tabs({
@@ -24,10 +26,11 @@ export function Tabs({
           aria-selected={item.value === value}
           onClick={() => onChange(item.value)}
           className={cn(
-            "rounded-md px-3 py-1 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             item.value === value && "bg-background text-foreground shadow-sm",
           )}
         >
+          {item.icon}
           {item.label}
           {item.count !== undefined && (
             <>
