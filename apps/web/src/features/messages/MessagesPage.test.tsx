@@ -8,11 +8,11 @@ import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
-  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1,
+  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin",
   gsm_device_id: null, reply_to_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
 };
 const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
-const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
+const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, owner_name: "gsm-modem1", content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
 const failed = { ...base, id: 3, direction: "outbound", content: "never arrives", status: "failed", error_message: "no signal" };
 const queued = { ...base, id: 4, direction: "outbound", content: "waiting", status: "queued" };
 
@@ -51,6 +51,27 @@ describe("list", () => {
     const failedRow = screen.getByText("never arrives").closest("tr")!;
     expect(failedRow).toHaveTextContent("failed");
     expect(failedRow).toHaveTextContent("no signal");
+  });
+
+  test("shows who owns each message (the sender, for sent ones)", async () => {
+    backend();
+    await open();
+    const row = (await screen.findByText("hello Ana")).closest("tr")!;
+    expect(within(row).getByText("Rhea Admin")).toBeInTheDocument();
+    expect(screen.getByText("hi from Ana").closest("tr")).toHaveTextContent("gsm-modem1");
+  });
+
+  test("the owner column is called Owner on the All tab", async () => {
+    backend();
+    await open();
+    expect(await screen.findByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
+  });
+
+  test("the owner column is called Sender on the Sent tab", async () => {
+    backend();
+    await open("admin", "/messages?direction=sent");
+    expect(await screen.findByRole("columnheader", { name: "Sender" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Owner" })).not.toBeInTheDocument();
   });
 
   test("asks for the newest first, on the All tab", async () => {

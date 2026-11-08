@@ -35,6 +35,7 @@ export function MessageDetailDialog({
 }: { message: Message; onClose: () => void; onReply?: () => void }) {
   const rows: [string, string | null][] = [
     ["Direction", directionLabel(message)],
+    ["Owner", message.owner_name],
     ["Contact", message.contact_name],
     ["Phone", message.phone_number],
     ["Status", message.status],

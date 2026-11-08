@@ -539,6 +539,8 @@ export interface components {
             id: number;
             /** Owner Id */
             owner_id: number;
+            /** Owner Name */
+            owner_name: string;
             /** Phone Number */
             phone_number: string;
             /** Received At */

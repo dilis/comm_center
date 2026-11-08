@@ -347,3 +347,16 @@ def test_the_length_limit_applies_to_the_text_after_the_name_is_inserted(client,
     r = send(client, h, contact_id=long_name, content="{{name}}" * 150)  # 1200 characters as typed
     assert r.status_code == 422 and "too long once the name is inserted" in r.text
     assert send(client, h, contact_id=long_name, content="{{name}}" * 10).status_code == 201
+
+
+def test_messages_name_their_owner(client, h, mailbox, conn):
+    """Accountability: each message carries its owner's name (the sender, for sent messages)."""
+    body, _ = listed(client, h)
+    by_id = {m["id"]: m for m in body["items"]}
+    for key in ("mine1", "theirs", "in1", "note"):
+        expected = conn.execute(
+            text("SELECT c.name FROM users u JOIN contacts c ON c.id = u.contact_id WHERE u.id = :i"),
+            {"i": by_id[mailbox[key]]["owner_id"]},
+        ).scalar_one()
+        assert by_id[mailbox[key]]["owner_name"] == expected
+    assert by_id[mailbox["in1"]]["owner_name"] == "gsm-test"

@@ -35,6 +35,7 @@ class MessageOut(BaseModel):
     content: str  # untrusted text: clients must escape it
     status: Status
     owner_id: int
+    owner_name: str  # the owner's name: the sender, for a sent message
     gsm_device_id: int | None
     reply_to_id: int | None  # for a reply: the received message it answers
     created_at: datetime
@@ -102,7 +103,7 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
     names = dict(
         db.execute(
             select(Contact.id, Contact.name).where(
-                Contact.id.in_({m.contact_id for m in messages})
+                Contact.id.in_({m.contact_id for m in messages} | {u.contact_id for u in owners.values()})
             ),
             execution_options=keep,
         ).all()
@@ -123,7 +124,7 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
             MessageOut(
                 id=m.id, channel=m.channel, direction=direction, contact_id=m.contact_id,
                 contact_name=names[m.contact_id], phone_number=m.phone_number, content=m.content,
-                status=m.status, owner_id=m.owner_id,
+                status=m.status, owner_id=m.owner_id, owner_name=names[owner.contact_id],
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
                 reply_to_id=m.reply_to_id,

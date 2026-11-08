@@ -104,6 +104,7 @@ export default function MessagesPage() {
         </div>
       ),
     },
+    { id: "owner", header: direction === "sent" ? "Sender" : "Owner", cell: (m) => m.owner_name },
     {
       id: "content",
       header: "Message",
