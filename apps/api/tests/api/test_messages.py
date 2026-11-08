@@ -320,3 +320,52 @@ def test_unauthenticated(client):
         client.delete("/messages/1"),
     ):
         assert call.status_code == 401
+
+
+# ---- placeholders ----------------------------------------------------------------------------
+
+
+def test_send_fills_in_the_contacts_name_and_stores_the_final_text(client, h, ana):
+    r = send(client, h, contact_id=ana, content="Hi {{name}}, yes you, {{ name }}!")
+    assert r.status_code == 201
+    assert r.json()["content"] == "Hi Ana Cruz, yes you, Ana Cruz!"
+    assert (
+        client.get(f"/messages/{r.json()['id']}", headers=h).json()["content"]
+        == "Hi Ana Cruz, yes you, Ana Cruz!"
+    )
+
+
+def test_send_rejects_unknown_placeholders_instead_of_texting_braces(client, h, ana, conn):
+    r = send(client, h, contact_id=ana, content="Hi {{nam}}")
+    assert r.status_code == 422 and "unknown placeholder {{nam}}" in r.text and "{{name}}" in r.text
+    assert conn.execute(text("SELECT COUNT(*) FROM messages")).scalar_one() == 0
+
+
+def test_the_length_limit_applies_to_the_text_after_the_name_is_inserted(client, h, conn):
+    long_name = make_contact(conn, "N" * 50)
+    make_phone(conn, long_name, "+639175550000")
+    r = send(client, h, contact_id=long_name, content="{{name}}" * 150)  # 1200 characters as typed
+    assert r.status_code == 422 and "too long once the name is inserted" in r.text
+    assert send(client, h, contact_id=long_name, content="{{name}}" * 10).status_code == 201
+
+
+def test_messages_name_their_owner(client, h, mailbox, conn):
+    """Accountability: each message carries its owner's name (the sender, for sent messages)."""
+    body, _ = listed(client, h)
+    by_id = {m["id"]: m for m in body["items"]}
+    for key in ("mine1", "theirs", "in1", "note"):
+        expected = conn.execute(
+            text("SELECT c.name FROM users u JOIN contacts c ON c.id = u.contact_id WHERE u.id = :i"),
+            {"i": by_id[mailbox[key]]["owner_id"]},
+        ).scalar_one()
+        assert by_id[mailbox[key]]["owner_name"] == expected
+    assert by_id[mailbox["in1"]]["owner_name"] == "gsm-test"
+
+
+def test_list_can_filter_to_the_replies_of_a_message(client, h, boss, ana, mailbox, conn):
+    reply = make_message(conn, ana, owner_id=boss, content="the answer")
+    conn.execute(text("UPDATE messages SET reply_to_id = :r WHERE id = :i"), {"r": mailbox["in1"], "i": reply})
+    _, ids = listed(client, h, f"reply_to_id={mailbox['in1']}")
+    assert ids == {reply}
+    _, none = listed(client, h, f"reply_to_id={mailbox['in2']}")
+    assert none == set()

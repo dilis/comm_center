@@ -15,10 +15,13 @@ from app.models import Contact, ContactPhone, GsmDevice, Message, User
 from app.pagination import Page, PageParams, paginate
 from app.phones import normalize_e164
 from app.schemas import SortOrder
+from app.templating import UnknownPlaceholders, render, validate
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 MAX_CONTENT_LENGTH = 1600  # ten concatenated SMS segments
+MAX_BULK_RECIPIENTS = 500
+TOO_LONG_WITH_NAME = "message too long once the name is inserted"
 Status = Literal["queued", "sending", "sent", "failed", "delivered", "received"]
 
 
@@ -32,29 +35,52 @@ class MessageOut(BaseModel):
     content: str  # untrusted text: clients must escape it
     status: Status
     owner_id: int
+    owner_name: str  # the owner's name: the sender, for a sent message
     gsm_device_id: int | None
+    reply_to_id: int | None  # for a reply: the received message it answers
     created_at: datetime
     sent_at: datetime | None
     received_at: datetime | None
     error_message: str | None
 
 
-class SendRequest(BaseModel):
-    contact_id: int
+class ContentRequest(BaseModel):
     content: str = Field(max_length=MAX_CONTENT_LENGTH)
-    phone: str | None = None  # one of the contact's numbers; default: primary, else first
 
     @field_validator("content")
     @classmethod
     def _not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("content must not be blank")
+        try:
+            validate(value)  # {{name}} is the only placeholder; anything else is a typo
+        except UnknownPlaceholders as exc:
+            raise ValueError(str(exc)) from None
         return value
+
+
+class SendRequest(ContentRequest):
+    contact_id: int
+    phone: str | None = None  # one of the contact's numbers; default: primary, else first
 
     @field_validator("phone")
     @classmethod
     def _normalize(cls, value: str | None) -> str | None:
         return None if value is None else normalize_e164(value)
+
+
+class BulkSendRequest(ContentRequest):
+    contact_ids: list[int] = Field(min_length=1, max_length=MAX_BULK_RECIPIENTS)
+
+
+class Skipped(BaseModel):
+    contact_id: int
+    reason: str
+
+
+class BulkSendResult(BaseModel):
+    queued: list[MessageOut]
+    skipped: list[Skipped]
 
 
 class Counts(BaseModel):
@@ -77,7 +103,7 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
     names = dict(
         db.execute(
             select(Contact.id, Contact.name).where(
-                Contact.id.in_({m.contact_id for m in messages})
+                Contact.id.in_({m.contact_id for m in messages} | {u.contact_id for u in owners.values()})
             ),
             execution_options=keep,
         ).all()
@@ -98,9 +124,10 @@ def to_out(db: Session, messages: list[Message]) -> list[MessageOut]:
             MessageOut(
                 id=m.id, channel=m.channel, direction=direction, contact_id=m.contact_id,
                 contact_name=names[m.contact_id], phone_number=m.phone_number, content=m.content,
-                status=m.status, owner_id=m.owner_id,
+                status=m.status, owner_id=m.owner_id, owner_name=names[owner.contact_id],
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
+                reply_to_id=m.reply_to_id,
                 created_at=m.created_at, sent_at=m.sent_at, received_at=m.received_at,
                 error_message=m.error_message,
             )
@@ -125,11 +152,18 @@ def by_direction(stmt, direction: Literal["all", "sent", "received"]):
     return stmt
 
 
+def personalize(template: str, name: str) -> str | None:
+    """The text for one recipient, or None if their name makes it longer than a message may be."""
+    text = render(template, {"name": name})
+    return text if len(text) <= MAX_CONTENT_LENGTH else None
+
+
 @router.get("", response_model=Page[MessageOut])
 def list_messages(
     direction: Literal["all", "sent", "received"] = "all",
     status: Status | None = None,
     contact_id: int | None = None,
+    reply_to_id: int | None = None,
     q: str | None = None,
     order: SortOrder = "desc",
     params: PageParams = Depends(),
@@ -141,6 +175,8 @@ def list_messages(
         stmt = stmt.where(Message.status == status)
     if contact_id is not None:
         stmt = stmt.where(Message.contact_id == contact_id)
+    if reply_to_id is not None:
+        stmt = stmt.where(Message.reply_to_id == reply_to_id)
     if q:
         stmt = stmt.where(
             Message.content.contains(q, autoescape=True)
@@ -193,9 +229,95 @@ def send_message(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, "contact has no phone number"
             )
+    text = personalize(body.content, contact.name)
+    if text is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
     message = Message(
         channel="gsm", contact_id=contact.id, phone_number=chosen.phone_e164,
-        content=body.content, status="queued", owner_id=caller.id,
+        content=text, status="queued", owner_id=caller.id,
+    )  # fmt: skip
+    db.add(message)
+    db.commit()
+    return to_out(db, [message])[0]
+
+
+@router.post("/send-bulk", response_model=BulkSendResult, status_code=status.HTTP_201_CREATED)
+def send_bulk(
+    body: BulkSendRequest,
+    caller: AuthUser = Depends(require("messages", "create")),
+    db: Session = Depends(get_db),
+) -> BulkSendResult:
+    """Queue the same text for many contacts: one message each, to the contact's primary number
+    (else its first). Contacts that cannot be messaged are skipped and reported, the rest are
+    queued together in one transaction, in the order given."""
+    ids = list(dict.fromkeys(body.contact_ids))  # each contact once, order kept
+    contacts = {
+        c.id: c.name
+        for c in db.scalars(scope(select(Contact).where(Contact.id.in_(ids)), caller, "contacts"))
+    }
+    phones: dict[int, list[ContactPhone]] = {}
+    for phone in db.scalars(
+        select(ContactPhone).where(ContactPhone.contact_id.in_(contacts)).order_by(ContactPhone.id)
+    ):
+        phones.setdefault(phone.contact_id, []).append(phone)
+
+    messages: list[Message] = []
+    skipped: list[Skipped] = []
+    for contact_id in ids:
+        if contact_id not in contacts:  # also what an unreadable contact looks like
+            skipped.append(Skipped(contact_id=contact_id, reason="contact not found"))
+            continue
+        numbers = phones.get(contact_id)
+        if not numbers:
+            skipped.append(Skipped(contact_id=contact_id, reason="no phone number"))
+            continue
+        text = personalize(body.content, contacts[contact_id])
+        if text is None:
+            skipped.append(Skipped(contact_id=contact_id, reason=TOO_LONG_WITH_NAME))
+            continue
+        chosen = next((p for p in numbers if p.is_primary), numbers[0])
+        messages.append(
+            Message(
+                channel="gsm", contact_id=contact_id, phone_number=chosen.phone_e164,
+                content=text, status="queued", owner_id=caller.id,
+            )
+        )  # fmt: skip
+    db.add_all(messages)
+    db.commit()
+    return BulkSendResult(queued=to_out(db, messages), skipped=skipped)
+
+
+@router.post("/{message_id}/reply", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+def reply_to_message(
+    message_id: int,
+    body: ContentRequest,
+    caller: AuthUser = Depends(require("messages", "create")),
+    db: Session = Depends(get_db),
+) -> MessageOut:
+    """Answer a received message: queue a message to the number it came from, linked to it.
+
+    Allowed to whoever can create messages and can see the original, so it needs no contacts
+    access. The number is the one stored on the original, even if the contact's numbers changed.
+    """
+    original = get_scoped(db, caller, message_id)
+    keep = {"include_deleted": True}
+    owner = db.execute(
+        select(User.is_system, User.agent_direction).where(User.id == original.owner_id),
+        execution_options=keep,
+    ).one()
+    if derive_direction(owner.is_system, owner.agent_direction) != "inbound":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "only received messages can be replied to"
+        )
+    name = db.scalar(
+        select(Contact.name).where(Contact.id == original.contact_id), execution_options=keep
+    )
+    text = personalize(body.content, name)
+    if text is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
+    message = Message(
+        channel=original.channel, contact_id=original.contact_id, phone_number=original.phone_number,
+        content=text, status="queued", owner_id=caller.id, reply_to_id=original.id,
     )  # fmt: skip
     db.add(message)
     db.commit()

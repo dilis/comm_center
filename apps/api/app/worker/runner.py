@@ -26,7 +26,7 @@ class DeviceWorker:
         *,
         sleep: Callable[[float], None] = time.sleep,
         heartbeat: Callable[[], None] = lambda: None,
-        max_sends_per_cycle: int = 20,
+        max_sends_per_cycle: int = 5,
     ) -> None:
         self.device_id = device_id
         self.provider = provider

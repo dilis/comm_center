@@ -112,3 +112,35 @@ def test_run_forever_survives_an_unexpected_error(session_factory, provider, dev
     monkeypatch.setattr(worker, "run_once", flaky)
     worker.run_forever(stop, 0.01)
     assert len(calls) == 2
+
+
+def test_messages_are_sent_one_at_a_time_each_spending_its_send_time_in_sending(
+    session_factory, commit, ana, device
+):
+    """Like a real modem: while one message is being sent the next ones still wait in the queue,
+    and the finished ones are already sent. Never all at once."""
+    from app.worker.fake import FakeProvider
+
+    ids = [queue(commit, ana, f"m{i}") for i in range(3)]
+    seen = []
+    provider = FakeProvider(
+        send_delay=2.0,
+        sleep=lambda seconds: seen.append([row(session_factory, i).status for i in ids]),
+    )
+    make_worker(session_factory, provider, device).run_once()
+    assert seen == [
+        ["sending", "queued", "queued"],
+        ["sent", "sending", "queued"],
+        ["sent", "sent", "sending"],
+    ]
+    assert [row(session_factory, i).status for i in ids] == ["sent", "sent", "sent"]
+
+
+def test_a_busy_queue_does_not_starve_inbound_polling(
+    session_factory, commit, ana, provider, device
+):
+    ids = [queue(commit, ana, f"m{i}") for i in range(12)]
+    worker = make_worker(session_factory, provider, device)  # the default batch per cycle
+    worker.run_once()
+    sent = [i for i in ids if row(session_factory, i).status == "sent"]
+    assert 0 < len(sent) < 12  # one cycle sends a small batch, then goes back to listen

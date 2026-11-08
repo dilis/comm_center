@@ -10,6 +10,7 @@
     "migrate": "uv run alembic upgrade head",
     "create-admin": "uv run python -m app.cli create-admin",
     "register-device": "uv run python -m app.cli register-device",
-    "worker": "uv run python -m app.worker"
+    "worker": "uv run python -m app.worker",
+    "import-contacts": "uv run python -m scripts.import_contacts"
   }
 }

@@ -2,6 +2,8 @@
 
 import json
 import logging
+import random
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +18,20 @@ class FakeProvider:
     is raised once, in order) and feed messages through ``inbound``. With ``inbox_file``, new JSON
     lines ``{"from": "...", "text": "..."}`` appended to that file arrive as inbound messages."""
 
-    def __init__(self, inbox_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        inbox_file: Path | None = None,
+        *,
+        send_delay: float = 0.0,
+        send_jitter: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        # A real modem needs a few seconds per SMS: each send waits ``send_delay`` plus up to
+        # ``send_jitter`` seconds (0 by default, so tests are instant). ``sleep`` is injectable so
+        # the worker can make the wait interruptible on shutdown.
+        self.send_delay = send_delay
+        self.send_jitter = send_jitter
+        self._sleep = sleep
         self.sent: list[tuple[str, str]] = []
         self.inbound: list[InboundSms] = []
         self.acknowledged: list[InboundSms] = []
@@ -34,6 +49,8 @@ class FakeProvider:
             raise self.send_errors.pop(0)
         if self.on_send:
             self.on_send(phone_number, content)
+        if self.send_delay > 0 or self.send_jitter > 0:
+            self._sleep(self.send_delay + random.uniform(0, self.send_jitter))
         log.info("fake send to %s: %r", phone_number, content)
         self.sent.append((phone_number, content))
 

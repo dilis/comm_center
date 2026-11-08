@@ -10,7 +10,9 @@ COPY apps/web apps/web
 RUN pnpm --filter @comm-center/web build
 
 FROM nginx:alpine
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# host:port of the API as seen from this container; override with -e API_UPSTREAM=...
+ENV API_UPSTREAM=api:8000
+COPY apps/web/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \

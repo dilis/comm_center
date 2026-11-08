@@ -49,3 +49,35 @@ def test_only_the_fake_provider_exists_until_hardware_arrives(capsys):
         main(["--provider", "serial"])
     assert exit_info.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_fake_provider_takes_time_to_send_like_a_modem():
+    slept = []
+    fake = FakeProvider(send_delay=2.0, send_jitter=1.0, sleep=slept.append)
+    for _ in range(50):
+        fake.send("+639171234567", "hi")
+    assert len(slept) == 50 and all(2.0 <= s <= 3.0 for s in slept)
+    assert len(set(slept)) > 1  # not the same every time
+    assert len(fake.sent) == 50
+
+
+def test_fake_provider_sleeps_before_it_records_the_send():
+    order = []
+    fake = FakeProvider(send_delay=1.0, sleep=lambda s: order.append(("slept", len(fake.sent))))
+    fake.send("+639171234567", "hi")
+    assert order == [("slept", 0)]  # the sleep happened while the message was not yet "sent"
+
+
+def test_a_failed_send_does_not_wait():
+    slept = []
+    fake = FakeProvider(send_delay=2.0, sleep=slept.append)
+    fake.send_errors.append(ProviderError("busy"))
+    with pytest.raises(ProviderError):
+        fake.send("+639171234567", "hi")
+    assert slept == []
+
+
+def test_by_default_the_fake_provider_is_instant_so_tests_stay_fast():
+    slept = []
+    FakeProvider(sleep=slept.append).send("+639171234567", "hi")
+    assert slept == []

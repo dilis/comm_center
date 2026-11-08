@@ -47,6 +47,7 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         Index("ix_messages_owner_id_deleted_at", "owner_id", "deleted_at"),
         Index("ix_messages_status_created_at", "status", "created_at"),
         Index("ix_messages_contact_id", "contact_id"),
+        Index("ix_messages_reply_to_id", "reply_to_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -59,6 +60,8 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         nullable=False,
     )
     gsm_device_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("gsm_device.id"))
+    # Set once at creation, for a reply: the received message it answers.
+    reply_to_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("messages.id"))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     error_message: Mapped[str | None] = mapped_column(Text)

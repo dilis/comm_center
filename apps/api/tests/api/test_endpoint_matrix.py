@@ -35,6 +35,8 @@ ALLOWED = {
     "GET /messages": {"admin", "operator", "agent", "auditor"},
     "GET /messages/counts": {"admin", "operator", "agent", "auditor"},
     "POST /messages/send": {"admin", "operator", "agent"},
+    "POST /messages/send-bulk": {"admin", "operator", "agent"},
+    "POST /messages/{m}/reply": {"admin", "operator", "agent"},
     "GET /messages/{m}": {"admin", "operator", "agent", "auditor"},
     "DELETE /messages/{m}": {"admin"},
 }
@@ -56,6 +58,10 @@ def call(client, endpoint, headers, contact_id, user_id, message_id):
         body = {"username": "fresh", "password": "a long enough pass", "contact": {"name": "Fresh"}}
     elif endpoint == "POST /messages/send":
         body = {"contact_id": contact_id, "content": "hi"}
+    elif endpoint == "POST /messages/send-bulk":
+        body = {"contact_ids": [contact_id], "content": "hi"}
+    elif endpoint == "POST /messages/{m}/reply":
+        body = {"content": "hi"}
     elif endpoint == "PUT /users/{u}":
         body = {"is_active": True}
     return client.request(method, path, headers=headers, json=body)

@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = 2.0  # idle wait between cycles
     worker_max_attempts: int = 3  # sends per message before it is marked failed
     worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
+    # The fake provider imitates a modem: each send takes this long (plus up to the jitter).
+    worker_fake_send_delay_seconds: float = 2.0
+    worker_fake_send_jitter_seconds: float = 1.0
     worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched every cycle
 
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
