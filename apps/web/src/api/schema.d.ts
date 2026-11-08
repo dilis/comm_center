@@ -126,7 +126,8 @@ export interface paths {
         put?: never;
         /**
          * Refresh
-         * @description Rotate: the presented refresh token is spent and a new pair is issued.
+         * @description Rotate: the presented refresh token is spent and a new pair is issued. Invalid or replayed
+         *     tokens count against the caller's address (a valid refresh never does).
          */
         post: operations["refresh_auth_refresh_post"];
         delete?: never;
@@ -167,6 +168,27 @@ export interface paths {
         post?: never;
         /** Delete Contact */
         delete: operations["delete_contact_contacts__contact_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Devices
+         * @description Modem health for people who may read every message. Devices are registered from the
+         *     command line, never through the API.
+         */
+        get: operations["list_devices_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -363,6 +385,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{user_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock User
+         * @description Clear the failed sign-ins (and wrong-password guesses) that lock this user out. Harmless
+         *     for a user who is not locked.
+         */
+        post: operations["unlock_user_users__user_id__unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -463,6 +506,24 @@ export interface components {
             received: number;
             /** Sent */
             sent: number;
+        };
+        /** DeviceOut */
+        DeviceOut: {
+            /** Id */
+            id: number;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Name */
+            name: string;
+            /** Phone Number */
+            phone_number: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "online" | "offline" | "error";
         };
         /** GroupOut */
         GroupOut: {
@@ -716,6 +777,8 @@ export interface components {
             id: number;
             /** Is Active */
             is_active: boolean;
+            /** Locked */
+            locked: boolean;
             /** Name */
             name: string;
             /** Owner Id */
@@ -1146,6 +1209,26 @@ export interface operations {
             };
         };
     };
+    list_devices_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceOut"][];
+                };
+            };
+        };
+    };
     list_groups_groups_get: {
         parameters: {
             query?: {
@@ -1555,6 +1638,35 @@ export interface operations {
         };
     };
     delete_user_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_user_users__user_id__unlock_post: {
         parameters: {
             query?: never;
             header?: never;

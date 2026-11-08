@@ -16,6 +16,7 @@ import { useListParams } from "@/lib/useListParams";
 import { formatDateTime } from "@/lib/utils";
 
 import { POLL } from "./polling";
+import { DeviceAlert } from "./DeviceAlert";
 import { MessageDetailDialog, directionLabel, type Message } from "./MessageDetailDialog";
 import { ReplyDialog } from "./ReplyDialog";
 import { SendMessageDialog } from "./SendMessageDialog";
@@ -160,6 +161,7 @@ export default function MessagesPage() {
           )
         }
       />
+      <DeviceAlert />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Tabs
           label="Direction"

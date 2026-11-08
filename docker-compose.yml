@@ -27,6 +27,11 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Believe the web container's X-Forwarded-For, so login rate limiting sees each visitor's
+      # address rather than nginx's. Safe only while nothing untrusted can reach the API port
+      # directly: see "Login rate limiting" in docs/DEPLOYMENT.md.
+      FORWARDED_ALLOW_IPS: "*"
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -46,6 +51,7 @@ services:
     command: ["/opt/venv/bin/python", "-m", "app.worker", "--provider", "fake", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
       # How long the fake modem takes per message (seconds): the delay plus up to the jitter.
       WORKER_FAKE_SEND_DELAY_SECONDS: ${WORKER_FAKE_SEND_DELAY_SECONDS:-2}

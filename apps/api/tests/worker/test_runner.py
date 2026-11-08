@@ -144,3 +144,24 @@ def test_a_busy_queue_does_not_starve_inbound_polling(
     worker.run_once()
     sent = [i for i in ids if row(session_factory, i).status == "sent"]
     assert 0 < len(sent) < 12  # one cycle sends a small batch, then goes back to listen
+
+
+def last_error(session_factory, device):
+    with session_factory() as db:
+        return db.execute(
+            text("SELECT last_error, last_error_at FROM gsm_device WHERE id=:i"), {"i": device.id}
+        ).one()
+
+
+def test_a_modem_error_is_kept_on_the_device_for_people_to_see(
+    session_factory, provider, device
+):
+    provider.poll_errors.append(ProviderError("serial port gone"))
+    worker = make_worker(session_factory, provider, device)
+    assert last_error(session_factory, device) == (None, None)
+    worker.run_once()
+    error, at = last_error(session_factory, device)
+    assert error == "serial port gone" and at is not None
+    worker.run_once()  # recovered: the status is online again but the last error stays as history
+    assert status_of(session_factory, device) == "online"
+    assert last_error(session_factory, device)[0] == "serial port gone"

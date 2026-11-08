@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import GsmDevice
 from app.worker.inbound import process_inbound
-from app.worker.outbound import RetryPolicy, recover_interrupted, send_one
+from app.worker.outbound import RetryPolicy, record_device_error, recover_interrupted, send_one
 from app.worker.provider import ChannelProvider, ProviderError
 
 log = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class DeviceWorker:
             done = process_inbound(self.session_factory, self.provider, device)
         except ProviderError as exc:
             log.error("device %s: modem unavailable: %s", self.device_id, exc)
+            record_device_error(self.session_factory, self.device_id, str(exc))
             self._set_status("error")
             return 0
         self._set_status("online")
