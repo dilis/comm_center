@@ -8,7 +8,7 @@ export const hasPermission = (held: PermissionSet, permission: string) => held.h
 export const canAny = (held: PermissionSet, permissions: string[]) =>
   permissions.some((p) => held.has(p));
 
-export function canReadResource(held: PermissionSet, resource: "messages" | "contacts" | "users") {
+export function canReadResource(held: PermissionSet, resource: "messages" | "contacts" | "users" | "logs") {
   const actions = ["read_all", "read_own", ...(resource === "messages" ? ["read_received"] : [])];
   return actions.some((a) => held.has(`${resource}:${a}`));
 }

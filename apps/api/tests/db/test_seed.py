@@ -6,6 +6,7 @@ USERS_ADMIN = {("users", a) for a in ("create", "read_all", "update", "delete")}
     ("groups", "read_all")
 }
 CONTACTS_ADMIN = {("contacts", a) for a in ("create", "read_all", "update", "delete")}
+LOGS = {("logs", "read_all")}
 MESSAGES_ADMIN = {("messages", a) for a in ("create", "read_all", "delete")}
 
 EXPECTED_GROUPS = {
@@ -18,7 +19,8 @@ EXPECTED_GROUPS = {
     "messages_operator": {("messages", "create"), ("messages", "read_all")},
     "messages_agent": {("messages", a) for a in ("create", "read_own", "read_received")},
     "messages_viewer": {("messages", "read_all")},
-    "admin": USERS_ADMIN | CONTACTS_ADMIN | MESSAGES_ADMIN,
+    "logs_viewer": LOGS,
+    "admin": USERS_ADMIN | CONTACTS_ADMIN | MESSAGES_ADMIN | LOGS,
     "operator": (
         {("contacts", a) for a in ("create", "read_all", "update")}
         | {("messages", "create"), ("messages", "read_all")}
@@ -26,7 +28,7 @@ EXPECTED_GROUPS = {
     ),
     "agent": {("contacts", "read_all")}
     | {("messages", a) for a in ("create", "read_own", "read_received")},
-    "auditor": {("contacts", "read_all"), ("messages", "read_all"), ("users", "read_all")},
+    "auditor": {("contacts", "read_all"), ("messages", "read_all"), ("users", "read_all")} | LOGS,
 }
 
 
@@ -77,7 +79,7 @@ def test_permission_catalogue(conn):
     expected = (
         {(r, a) for r in ("users", "contacts") for a in ("create", "read_all", "read_own", "update", "delete")}
         | {("messages", a) for a in ("create", "read_all", "read_own", "read_received", "delete")}
-        | {("groups", "read_all")}
+        | {("groups", "read_all"), ("logs", "read_all")}
     )
     assert got == expected
     assert ("messages", "update") not in got  # messages are an immutable log

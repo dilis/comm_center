@@ -1,3 +1,4 @@
+from app.models.audit import ActivityLog, LoginLog
 from app.models.auth import LoginAttempt, RefreshToken
 from app.models.authz import (
     AccessGroup,
@@ -13,6 +14,7 @@ from app.models.messaging import GsmDevice, Message, MessageRead
 
 __all__ = [
     "AccessGroup",
+    "ActivityLog",
     "Base",
     "Contact",
     "ContactPhone",
@@ -21,6 +23,7 @@ __all__ = [
     "GroupPermission",
     "GsmDevice",
     "LoginAttempt",
+    "LoginLog",
     "Message",
     "MessageRead",
     "OwnedMixin",

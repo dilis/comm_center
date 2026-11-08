@@ -68,6 +68,9 @@ export default function MessagesPage() {
     refetchInterval: POLL.idleMs, // new messages change the tab numbers too
     refetchOnWindowFocus: true,
   });
+  // "<unread>/<total>" for the tabs that hold received messages.
+  const hasUnread = (counts.data?.unread ?? 0) > 0;
+  const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
   const query = useQuery({
     queryKey: ["messages", "list", list.page, list.pageSize, list.order, q, status, direction],
     queryFn: () =>
@@ -199,9 +202,9 @@ export default function MessagesPage() {
           value={direction}
           onChange={(v) => list.setFilter("direction", v === "all" ? "" : v)}
           items={[
-            { value: "all", label: "All", count: counts.data?.all },
+            { value: "all", label: "All", count: unreadOf(counts.data?.all), attention: hasUnread },
             { value: "sent", label: "Sent", icon: <SentArrow />, count: counts.data?.sent },
-            { value: "received", label: "Received", icon: <ReceivedArrow />, count: counts.data?.received },
+            { value: "received", label: "Received", icon: <ReceivedArrow />, count: unreadOf(counts.data?.received), attention: hasUnread },
           ]}
         />
         <SearchBox label="Search messages" placeholder="Search text or number" value={q} onChange={(v) => list.setFilter("q", v)} />

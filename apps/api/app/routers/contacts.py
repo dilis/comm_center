@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import exists, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.audit import record_activity
 from app.authz import AuthUser, require, scope
 from app.clock import utcnow
 from app.contact_ops import phones_by_contact, replace_phones
@@ -116,6 +117,7 @@ def list_contacts(
 @router.post("", response_model=ContactOut, status_code=status.HTTP_201_CREATED)
 def create_contact(
     body: ContactIn,
+    request: Request,
     caller: AuthUser = Depends(require("contacts", "create")),
     db: Session = Depends(get_db),
 ) -> ContactOut:
@@ -125,6 +127,7 @@ def create_contact(
     db.add(contact)
     db.flush()
     replace_phones(db, contact.id, body.phones)
+    record_activity(db, request, caller.id, "create", "contact", contact.id, f"Created contact {contact.name}")
     db.commit()
     return to_out(db, [contact])[0]
 
@@ -140,6 +143,7 @@ def read_contact(
 def update_contact(
     contact_id: int,
     body: ContactUpdate,
+    request: Request,
     caller: AuthUser = Depends(require("contacts", "update")),
     db: Session = Depends(get_db),
 ) -> ContactOut:
@@ -155,6 +159,7 @@ def update_contact(
     )
     if body.phones is not None:
         replace_phones(db, contact.id, body.phones)
+    record_activity(db, request, caller.id, "update", "contact", contact.id, f"Updated contact {contact.name}")
     db.commit()
     return to_out(db, [contact])[0]
 
@@ -162,6 +167,7 @@ def update_contact(
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_contact(
     contact_id: int,
+    request: Request,
     caller: AuthUser = Depends(require("contacts", "delete")),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -176,5 +182,6 @@ def delete_contact(
         .where(ContactPhone.contact_id == contact.id, ContactPhone.deleted_at.is_(None))
         .values(deleted_at=now)
     )
+    record_activity(db, request, caller.id, "delete", "contact", contact.id, f"Deleted contact {contact.name}")
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

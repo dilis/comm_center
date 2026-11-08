@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
+from app.audit import record_activity
 from app.authz import AuthUser, require, scope
 from app.clock import utcnow
 from app.db import get_db
@@ -89,6 +90,7 @@ class Counts(BaseModel):
     all: int
     sent: int
     received: int
+    unread: int  # received messages the caller has not read yet
 
 
 def to_out(db: Session, messages: list[Message], viewer_id: int) -> list[MessageOut]:
@@ -212,19 +214,27 @@ def list_messages(
 def message_counts(
     caller: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Counts:
-    """Badge numbers for the All / Sent / Received tabs, under the caller's read scope."""
+    """Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the caller's read scope."""
     base = scope(select(Message.id), caller, "messages")
 
     def count(direction: Literal["all", "sent", "received"]) -> int:
         stmt = by_direction(base, direction)
         return db.scalar(select(func.count()).select_from(stmt.subquery()))
 
-    return Counts(all=count("all"), sent=count("sent"), received=count("received"))
+    read = select(MessageRead.message_id).where(MessageRead.user_id == caller.id)
+    unread = by_direction(base, "received").where(Message.id.not_in(read))
+    return Counts(
+        all=count("all"),
+        sent=count("sent"),
+        received=count("received"),
+        unread=db.scalar(select(func.count()).select_from(unread.subquery())),
+    )
 
 
 @router.post("/send", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
 def send_message(
     body: SendRequest,
+    request: Request,
     caller: AuthUser = Depends(require("messages", "create")),
     db: Session = Depends(get_db),
 ) -> MessageOut:
@@ -255,6 +265,8 @@ def send_message(
         content=text, status="queued", owner_id=caller.id,
     )  # fmt: skip
     db.add(message)
+    db.flush()
+    record_activity(db, request, caller.id, "send", "message", message.id, f"Sent a message to {contact.name}")
     db.commit()
     return to_out(db, [message], caller.id)[0]
 
@@ -262,6 +274,7 @@ def send_message(
 @router.post("/send-bulk", response_model=BulkSendResult, status_code=status.HTTP_201_CREATED)
 def send_bulk(
     body: BulkSendRequest,
+    request: Request,
     caller: AuthUser = Depends(require("messages", "create")),
     db: Session = Depends(get_db),
 ) -> BulkSendResult:
@@ -301,6 +314,10 @@ def send_bulk(
             )
         )  # fmt: skip
     db.add_all(messages)
+    record_activity(
+        db, request, caller.id, "send_bulk", "message", None,
+        f"Sent {len(messages)} messages ({len(skipped)} skipped)",
+    )
     db.commit()
     return BulkSendResult(queued=to_out(db, messages, caller.id), skipped=skipped)
 
@@ -309,6 +326,7 @@ def send_bulk(
 def reply_to_message(
     message_id: int,
     body: ContentRequest,
+    request: Request,
     caller: AuthUser = Depends(require("messages", "create")),
     db: Session = Depends(get_db),
 ) -> MessageOut:
@@ -339,6 +357,8 @@ def reply_to_message(
     )  # fmt: skip
     db.add(message)
     mark_read(db, caller.id, original.id)  # answering it means it was read
+    db.flush()
+    record_activity(db, request, caller.id, "reply", "message", message.id, f"Replied to message {original.id} from {name}")
     db.commit()
     return to_out(db, [message], caller.id)[0]
 
@@ -369,9 +389,12 @@ def read_message(
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_message(
     message_id: int,
+    request: Request,
     caller: AuthUser = Depends(require("messages", "delete")),
     db: Session = Depends(get_db),
 ) -> Response:
-    get_scoped(db, caller, message_id).deleted_at = utcnow()
+    message = get_scoped(db, caller, message_id)
+    message.deleted_at = utcnow()
+    record_activity(db, request, caller.id, "delete", "message", message.id, f"Deleted message {message.id}")
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

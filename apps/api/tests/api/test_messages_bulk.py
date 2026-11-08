@@ -152,7 +152,7 @@ def test_the_messages_are_visible_to_their_sender_afterwards(client, conn):
     ids = [person(conn, f"P{i}", f"+63917{i:07d}") for i in range(1, 4)]
     bulk(client, h, ids)
     assert client.get("/messages", headers=h).json()["total"] == 3
-    assert client.get("/messages/counts", headers=h).json() == {"all": 3, "sent": 3, "received": 0}
+    assert client.get("/messages/counts", headers=h).json() == {"all": 3, "sent": 3, "received": 0, "unread": 0}
 
 
 def test_unauthenticated(client):

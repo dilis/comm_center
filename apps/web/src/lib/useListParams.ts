@@ -57,5 +57,7 @@ export function useListParams(defaults: Defaults) {
       [update, defaults.sort, defaults.order],
     ),
     setFilter: useCallback((key: string, value: string) => update({ [key]: value }), [update]),
+    /** Change several filters in one URL update (separate setFilter calls would overwrite each other). */
+    setFilters: useCallback((changes: Record<string, string>) => update(changes), [update]),
   };
 }

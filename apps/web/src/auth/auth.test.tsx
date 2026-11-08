@@ -134,12 +134,12 @@ describe("sign out", () => {
 
 describe("permission-aware navigation", () => {
   const nav = async () =>
-    (await screen.findAllByRole("link")).map((a) => a.textContent).filter((t) => ["Messages", "Contacts", "Users"].includes(t ?? ""));
+    (await screen.findAllByRole("link")).map((a) => a.textContent).filter((t) => ["Messages", "Contacts", "Users", "Logs"].includes(t ?? ""));
 
   test.each<[Role, string[]]>([
-    ["admin", ["Messages", "Contacts", "Users"]],
+    ["admin", ["Messages", "Contacts", "Users", "Logs"]],
     ["operator", ["Messages", "Contacts", "Users"]],
-    ["auditor", ["Messages", "Contacts", "Users"]],
+    ["auditor", ["Messages", "Contacts", "Users", "Logs"]],
     ["agent", ["Messages", "Contacts"]],
   ])("%s sees %j", async (role, expected) => {
     signIn(role);

@@ -315,8 +315,18 @@ Still open:
 
 - **Per user `[DECIDED]`:** whether a received message has been read is kept per person in `message_read(user_id, message_id, read_at)` (migration `0008`; primary key on the pair), so the immutable message is untouched and one person reading it does not change what others see. `MessageOut.unread` is computed for the caller: true for a received message with no row for them, always false for sent messages.
 - **Marking read:** `POST /messages/{id}/read` (204, idempotent; any caller who can see the message, 404 otherwise; a no-op for sent messages) is called by the web app when a person opens a message's details. Replying to a message also marks it read for the replier. There is no "mark unread".
+- **Tab numbers:** `GET /messages/counts` also returns `unread` (received messages in the caller's scope with no read row for them). The **All** and **Received** tabs show `<unread>/<total>`; **Sent** shows its total.
 - **Existing messages:** the migration marks everything already received as read for the users that exist at that time, so upgrading does not turn the whole history bold. A user created later sees older received messages as unread; a created-after rule is a possible refinement.
 - **UI:** an unread row has a blue dot beside the contact name and a bold message; opening it marks it read and the list refreshes. Not done: an unread count on the Received tab.
+
+### Activity and login logs (addition after Phase 7)
+
+- **Two logs `[DECIDED]`:** `activity_log(user_id, action, resource, resource_id, summary, ip, created_at)` records what a signed-in person changed; `login_log(event, username, user_id?, ip, created_at)` records sign-in history, apart from the rate-limit table `login_attempt`. Migration `0009`.
+- **What is logged:** creates, updates and deletes of contacts, users and messages; send, bulk send and reply; unlock; a person's own profile, phone and password changes. Not logged: reads, marking a message read, requests that fail or are refused, and anything done by the worker. Summaries never contain message text or passwords.
+- **Login events:** `login`, `login_failed` (also for unknown usernames, with no user id), `login_blocked`, `logout`, `sessions_revoked` (replayed refresh token). Successful refreshes are not logged.
+- **Written with the change:** the row is added to the same transaction, so a rolled-back change leaves no entry.
+- **Access:** new permission `logs:read_all` in a `logs_viewer` block included by `admin` and `auditor` (so an operator can no longer assign `auditor`, by the escalation rule). `GET /logs/activity` (filters `user_id`, `action`, `resource`, `q`) and `GET /logs/logins` (`user_id`, `event`, `q`), newest first; shown on the **Logs** page. Entries of deleted users still show their name.
+- **Follow-up `[OPEN]`:** no retention or pruning yet; no date-range filter; the worker's sends are visible only as messages.
 
 ### Sending to many contacts (addition after Phase 6)
 

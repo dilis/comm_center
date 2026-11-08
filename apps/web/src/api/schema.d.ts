@@ -228,6 +228,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/logs/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Activity
+         * @description What people did, newest first. ``q`` matches the summary or the person's username.
+         */
+        get: operations["list_activity_logs_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logs/logins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Logins
+         * @description Sign-in history, newest first. ``q`` matches the username typed or the address.
+         */
+        get: operations["list_logins_logs_logins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages": {
         parameters: {
             query?: never;
@@ -254,7 +294,7 @@ export interface paths {
         };
         /**
          * Message Counts
-         * @description Badge numbers for the All / Sent / Received tabs, under the caller's read scope.
+         * @description Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the caller's read scope.
          */
         get: operations["message_counts_messages_counts_get"];
         put?: never;
@@ -431,6 +471,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityOut */
+        ActivityOut: {
+            /** Action */
+            action: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Ip */
+            ip: string;
+            /** Name */
+            name: string;
+            /** Resource */
+            resource: string;
+            /** Resource Id */
+            resource_id: number | null;
+            /** Summary */
+            summary: string;
+            /** User Id */
+            user_id: number;
+            /** Username */
+            username: string;
+        };
         /** BulkSendRequest */
         BulkSendRequest: {
             /** Contact Ids */
@@ -527,6 +593,8 @@ export interface components {
             received: number;
             /** Sent */
             sent: number;
+            /** Unread */
+            unread: number;
         };
         /** DeviceOut */
         DeviceOut: {
@@ -568,6 +636,24 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LoginOut */
+        LoginOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Event */
+            event: string;
+            /** Id */
+            id: number;
+            /** Ip */
+            ip: string;
+            /** User Id */
+            user_id: number | null;
+            /** Username */
+            username: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -639,6 +725,17 @@ export interface components {
             /** Unread */
             unread: boolean;
         };
+        /** Page[ActivityOut] */
+        Page_ActivityOut_: {
+            /** Items */
+            items: components["schemas"]["ActivityOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** Page[ContactOut] */
         Page_ContactOut_: {
             /** Items */
@@ -654,6 +751,17 @@ export interface components {
         Page_GroupOut_: {
             /** Items */
             items: components["schemas"]["GroupOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[LoginOut] */
+        Page_LoginOut_: {
+            /** Items */
+            items: components["schemas"]["LoginOut"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -1302,6 +1410,77 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    list_activity_logs_activity_get: {
+        parameters: {
+            query?: {
+                user_id?: number | null;
+                action?: string | null;
+                resource?: string | null;
+                q?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ActivityOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_logins_logs_logins_get: {
+        parameters: {
+            query?: {
+                user_id?: number | null;
+                event?: string | null;
+                q?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LoginOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

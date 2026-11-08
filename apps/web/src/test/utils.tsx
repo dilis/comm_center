@@ -12,14 +12,14 @@ export const ROLE_PERMISSIONS = {
   admin: [
     "users:create", "users:read_all", "users:update", "users:delete", "groups:read_all",
     "contacts:create", "contacts:read_all", "contacts:update", "contacts:delete",
-    "messages:create", "messages:read_all", "messages:delete",
+    "messages:create", "messages:read_all", "messages:delete", "logs:read_all",
   ],
   operator: [
     "contacts:create", "contacts:read_all", "contacts:update",
     "messages:create", "messages:read_all", "users:read_all",
   ],
   agent: ["contacts:read_all", "messages:create", "messages:read_own", "messages:read_received"],
-  auditor: ["contacts:read_all", "messages:read_all", "users:read_all"],
+  auditor: ["contacts:read_all", "messages:read_all", "users:read_all", "logs:read_all"],
 } as const;
 
 export type Role = keyof typeof ROLE_PERMISSIONS;
@@ -65,12 +65,14 @@ export function signIn(role: Role | string[] = "admin", overrides: Record<string
 /** Empty list endpoints so a page can mount without every test stubbing all of them. */
 export function emptyBackend() {
   server.use(
-    http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0 })),
+    http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0, unread: 0 })),
     http.get("*/api/messages", () => HttpResponse.json(page([]))),
     http.get("*/api/contacts", () => HttpResponse.json(page([]))),
     http.get("*/api/users", () => HttpResponse.json(page([]))),
     http.get("*/api/groups", () => HttpResponse.json(page([]))),
     http.get("*/api/devices", () => HttpResponse.json([])),
+    http.get("*/api/logs/activity", () => HttpResponse.json(page([]))),
+    http.get("*/api/logs/logins", () => HttpResponse.json(page([]))),
   );
 }
 

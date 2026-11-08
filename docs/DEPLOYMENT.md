@@ -65,6 +65,7 @@ The schema and starting data are created by eight Alembic migrations in `apps/ap
 | `0006` | Adds `gsm_device.last_error` and `last_error_at`, the latest modem problem shown in the app |
 | `0007` | Adds `login_attempt.kind`, so sign-in, password-change and token-refresh failures are counted apart |
 | `0008` | Adds `message_read`, the per-user read state of received messages (everything already received counts as read for the existing users) |
+| `0009` | Adds `activity_log` and `login_log`, and the `logs:read_all` permission (new `logs_viewer` group, included by `admin` and `auditor`) |
 
 What to know:
 - **No human user is seeded.** There is no default credential. Create the first admin once, after migrating: `ADMIN_PASSWORD=... pnpm --filter @comm-center/api create-admin --username NAME` (it prompts for the password if `ADMIN_PASSWORD` is unset, needs at least 10 characters, and refuses to run once any human user exists). In the API container: `docker compose exec api /opt/venv/bin/python -m app.cli create-admin --username NAME`.
@@ -72,7 +73,7 @@ What to know:
 - **Native processes migrate explicitly:** `pnpm db:migrate`.
 - **The trigger needs a server setting.** `0001` creates a trigger, and MySQL only lets a non-SUPER user do that when `log_bin_trust_function_creators=1`. The compose file and the commands below already pass `--log-bin-trust-function-creators=1`. A MySQL you provide yourself needs it too, for example `SET GLOBAL log_bin_trust_function_creators = 1;` or the same line under `[mysqld]` in its config. Without it, migration `0001` fails with error 1419.
 - **A failed migration leaves partial tables.** MySQL DDL is not transactional. If a migration fails midway, drop and recreate the database before retrying (the data is only what the migrations created).
-- **Check the state** with `alembic current` (see each mode). A healthy database reports `0008 (head)`.
+- **Check the state** with `alembic current` (see each mode). A healthy database reports `0009 (head)`.
 
 ## 1. Separate containers
 
@@ -115,7 +116,7 @@ curl http://127.0.0.1:8000/health                        # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'          # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                    # {"status":"ok"}: the web container reaches the API
 docker run --rm --network cc-net --env-file deploy/api.env comm-center-api \
-  /opt/venv/bin/alembic current                          # 0008 (head)
+  /opt/venv/bin/alembic current                          # 0009 (head)
 ```
 
 Run migrations by hand (for example after pulling a new version, before replacing the API container):
@@ -155,7 +156,7 @@ cp .env.example .env     # edit it; DATABASE_URL must match the database you use
 ```sh
 pnpm install                                  # JS dependencies into ./node_modules
 (cd apps/api && uv sync --no-dev)             # Python dependencies into apps/api/.venv (use plain `uv sync` if you also want the tests)
-pnpm db:migrate                               # applies 0001 to 0008
+pnpm db:migrate                               # applies 0001 to 0009
 
 # API (keep it running; add --reload only for development)
 cd apps/api && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -172,7 +173,7 @@ Verify:
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                  # {"status":"ok"}: the proxy reaches the API
-(cd apps/api && uv run alembic current)                # 0008 (head)
+(cd apps/api && uv run alembic current)                # 0009 (head)
 ```
 
 ## 3. Docker Compose
@@ -191,7 +192,7 @@ Verify (use your `API_PORT` and `WEB_PORT`):
 docker compose --profile app ps                        # db, api and web all (healthy)
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
-docker compose exec api /opt/venv/bin/alembic current  # 0008 (head)
+docker compose exec api /opt/venv/bin/alembic current  # 0009 (head)
 ```
 
 Run migrations by hand:
@@ -250,3 +251,12 @@ The same mechanism protects two more endpoints, each with its own counter: `PUT 
 Two things to know:
 - A lockout can be triggered against a real user by anyone who knows the username (the usual trade-off); it lifts by itself after the window.
 - The per-address limit needs the real client address. Behind the bundled nginx the API sees nginx's address unless it believes `X-Forwarded-For`, which uvicorn does only for addresses in `FORWARDED_ALLOW_IPS`. Compose sets it to `*`, which is fine while only the web port is reachable by users; if the API port is exposed too, a caller could forge the header and dodge the per-address limit (the per-username limit still holds), so restrict the API port or set `FORWARDED_ALLOW_IPS` to the proxy's address. When you run the API containers yourself (mode 1), set it the same way.
+
+## Activity and sign-in logs
+
+Two append-only tables record what happens, both readable on the **Logs** page (or `GET /logs/activity`, `GET /logs/logins`) by people with `logs:read_all` (the `admin` and `auditor` roles):
+
+- `activity_log`: who created, changed or deleted contacts, users and messages, sent or replied to messages, unlocked a user, or changed their own profile, phones or password; with the client address. Reading and failed or refused requests are not logged. Message text and passwords are never stored in it.
+- `login_log`: sign-ins (`login`, `login_failed`, `login_blocked`), sign-outs (`logout`) and `sessions_revoked` (a spent refresh token was replayed). It is separate from `login_attempt`, which only drives rate limiting and is pruned.
+
+Nothing prunes these tables; they grow with use. Archive or delete old rows with your usual database tooling if size matters.

@@ -8,6 +8,7 @@ import LoginPage from "@/auth/LoginPage";
 import { RequireAuth, RequireRead } from "@/auth/guards";
 import AppShell, { Home } from "@/components/AppShell";
 import ContactsPage from "@/features/contacts/ContactsPage";
+import LogsPage from "@/features/logs/LogsPage";
 import MessagesPage from "@/features/messages/MessagesPage";
 import UsersPage from "@/features/users/UsersPage";
 
@@ -41,6 +42,9 @@ export default function App() {
               </Route>
               <Route element={<RequireRead resource="users" />}>
                 <Route path="users" element={<UsersPage />} />
+              </Route>
+              <Route element={<RequireRead resource="logs" />}>
+                <Route path="logs" element={<LogsPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

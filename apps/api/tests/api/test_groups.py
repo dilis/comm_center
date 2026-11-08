@@ -12,7 +12,7 @@ def test_admin_lists_groups_with_effective_permissions(client, conn):
     assert r.status_code == 200
     body = r.json()
     assert set(body) == {"items", "total", "page", "page_size"}
-    assert body["total"] == 13  # 9 building blocks + 4 roles
+    assert body["total"] == 14  # 10 building blocks + 4 roles
     by_name = {g["name"]: g for g in body["items"]}
     assert by_name["contacts_viewer"]["permissions"] == ["contacts:read_all"]
     # roles include their descendants' permissions
@@ -24,7 +24,7 @@ def test_groups_pagination(client, conn):
     make_login_user(conn, "boss", "admin")
     r = client.get("/groups?page=2&page_size=5", headers=auth_header(client, "boss"))
     body = r.json()
-    assert len(body["items"]) == 5 and body["total"] == 13 and body["page"] == 2
+    assert len(body["items"]) == 5 and body["total"] == 14 and body["page"] == 2
 
 
 @pytest.mark.parametrize("role", ["operator", "agent", "auditor"])
@@ -44,7 +44,7 @@ def test_deleted_groups_are_hidden(client, conn):
     gid = conn.execute(text("SELECT id FROM access_group WHERE name='auditor'")).scalar_one()
     soft_delete(conn, "access_group", gid)
     body = client.get("/groups?page_size=100", headers=auth_header(client, "boss")).json()
-    assert body["total"] == 12 and "auditor" not in {g["name"] for g in body["items"]}
+    assert body["total"] == 13 and "auditor" not in {g["name"] for g in body["items"]}
 
 
 def test_page_size_is_bounded(client, conn):

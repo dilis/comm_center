@@ -90,3 +90,23 @@ def test_replying_marks_the_original_read_for_the_replier(client, world):
     assert r.status_code == 201
     assert get(client, "admin1", world["incoming"])["unread"] is False
     assert get(client, "op1", world["incoming"])["unread"] is True
+
+
+def test_counts_carry_the_callers_own_unread_total(client, conn, world):
+    other = make_message(conn, world["ana"], owner_id=make_inbound_agent(conn, "gsm-two"), status="received")
+    make_message(conn, world["ana"], owner_id=world["admin"])  # sent: never unread
+
+    def counts(who):
+        return client.get("/messages/counts", headers=auth_header(client, who)).json()
+
+    assert counts("admin1") == {"all": 3, "sent": 1, "received": 2, "unread": 2}
+    client.post(f"/messages/{world['incoming']}/read", headers=auth_header(client, "admin1"))
+    assert counts("admin1")["unread"] == 1
+    assert counts("op1")["unread"] == 2  # someone else's reading does not count for them
+    client.post(f"/messages/{other}/read", headers=auth_header(client, "admin1"))
+    assert counts("admin1")["unread"] == 0
+
+
+def test_unread_counts_only_what_the_caller_may_see(client, conn, world):
+    make_login_user(conn, "ag1", "agent")  # an agent sees received messages too
+    assert client.get("/messages/counts", headers=auth_header(client, "ag1")).json()["unread"] == 1

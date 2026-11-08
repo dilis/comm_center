@@ -158,7 +158,7 @@ def test_direction_tabs(client, h, mailbox):
 
 
 def test_counts_per_tab_follow_the_scope(client, h, mailbox, conn):
-    assert client.get("/messages/counts", headers=h).json() == {"all": 6, "sent": 4, "received": 2}
+    assert client.get("/messages/counts", headers=h).json() == {"all": 6, "sent": 4, "received": 2, "unread": 2}
     make_login_user(conn, "ag", "agent")
     mine = make_message(
         conn,
@@ -167,7 +167,7 @@ def test_counts_per_tab_follow_the_scope(client, h, mailbox, conn):
     )
     assert mine
     counts = client.get("/messages/counts", headers=auth_header(client, "ag")).json()
-    assert counts == {"all": 3, "sent": 1, "received": 2}
+    assert counts == {"all": 3, "sent": 1, "received": 2, "unread": 2}
 
 
 def test_filters_search_sort_and_pagination(client, h, mailbox, ana):
