@@ -94,7 +94,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
             create.mutate(values);
           })}
         >
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="user-username">Username</Label>
               <Input id="user-username" autoComplete="off" {...register("username")} />
@@ -123,7 +123,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
               )}
             </div>
             {mode === "new" ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="user-name">Full name</Label>
                   <Input id="user-name" {...register("name")} />
@@ -238,7 +238,7 @@ export function EditUserDialog({ user, onClose }: { user: User; onClose: () => v
             <FieldError message={errors.username?.message} />
           </div>
           {editsContact && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-name">Full name</Label>
                 <Input id="edit-name" {...register("name")} />

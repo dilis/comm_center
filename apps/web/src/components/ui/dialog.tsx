@@ -17,7 +17,7 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-lg border bg-background p-6 shadow-lg",
+        "fixed left-1/2 top-1/2 z-50 grid max-h-[90vh] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-lg border bg-background p-4 shadow-lg sm:p-6",
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ export const DialogHeader = (props: React.HTMLAttributes<HTMLDivElement>) => (
   <div className="flex flex-col gap-1.5" {...props} />
 );
 export const DialogFooter = (props: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className="flex justify-end gap-2" {...props} />
+  <div className="flex flex-wrap justify-end gap-2" {...props} />
 );
 export const DialogTitle = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Title>,

@@ -73,6 +73,7 @@ export default function UsersPage() {
       id: "actions",
       header: "Actions",
       className: "text-right",
+      hideLabelOnMobile: true,
       cell: (u) => (
         <div className="flex justify-end gap-1">
           {canActOn("users", "update", u.owner_id) && (

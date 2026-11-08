@@ -15,7 +15,7 @@ export function Tabs({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="inline-flex rounded-lg bg-muted p-1">
+    <div role="tablist" aria-label={label} className="inline-flex max-w-full overflow-x-auto rounded-lg bg-muted p-1">
       {items.map((item) => (
         <button
           key={item.value}

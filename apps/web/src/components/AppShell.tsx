@@ -31,16 +31,16 @@ export default function AppShell() {
   const pages = useAllowedPages();
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center gap-6 border-b px-6 py-3">
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-4 py-3 sm:px-6">
         <span className="font-semibold">Comm Center</span>
-        <nav aria-label="Main" className="flex gap-1">
+        <nav aria-label="Main" className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
           {pages.map((p) => (
             <NavLink
               key={p.to}
               to={p.to}
               className={({ isActive }) =>
                 cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted",
+                  "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted",
                   isActive && "bg-muted text-foreground",
                 )
               }
@@ -49,15 +49,15 @@ export default function AppShell() {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3 text-sm">
-          <span>{me?.name}</span>
+        <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
+          <span className="truncate">{me?.name}</span>
           <Button variant="outline" size="sm" onClick={() => void logout()}>
             <LogOut className="h-4 w-4" aria-hidden />
             Sign out
           </Button>
         </div>
       </header>
-      <main className="flex-1 p-6">
+      <main className="min-w-0 flex-1 p-4 sm:p-6">
         <Outlet />
       </main>
     </div>

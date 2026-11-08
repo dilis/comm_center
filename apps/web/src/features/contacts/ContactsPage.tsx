@@ -76,6 +76,7 @@ export default function ContactsPage() {
       id: "actions",
       header: "Actions",
       className: "text-right",
+      hideLabelOnMobile: true,
       cell: (c) => (
         <div className="flex justify-end gap-1">
           {canActOn("contacts", "update", c.owner_id) && (

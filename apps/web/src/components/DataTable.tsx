@@ -12,6 +12,8 @@ export type Column<T> = {
   sortKey?: string;
   cell: (row: T) => ReactNode;
   className?: string;
+  /** Hide the "Header:" label on a stacked (phone) row, e.g. for an actions column. */
+  hideLabelOnMobile?: boolean;
 };
 
 export type SortState = { key: string; order: "asc" | "desc" };
@@ -50,6 +52,8 @@ export function DataTable<T>({
     }
   }, [isLoading, error, rows, total, page, pages, onPageChange]);
 
+  const sortable = columns.filter((c) => c.sortKey);
+
   function header(column: Column<T>) {
     if (!column.sortKey || !onSortChange) return column.header;
     const active = sort?.key === column.sortKey;
@@ -68,6 +72,24 @@ export function DataTable<T>({
 
   return (
     <div className="space-y-3">
+      {onSortChange && sortable.length > 0 && (
+        <label className="flex items-center gap-2 text-sm md:hidden">
+          Sort by
+          <Select
+            className="h-8 flex-1"
+            value={`${sort?.key ?? ""}:${sort?.order ?? "asc"}`}
+            onChange={(e) => {
+              const [key, order] = e.target.value.split(":");
+              onSortChange(key, order as "asc" | "desc");
+            }}
+          >
+            {sortable.flatMap((c) => [
+              <option key={`${c.id}:asc`} value={`${c.sortKey}:asc`}>{c.header} (ascending)</option>,
+              <option key={`${c.id}:desc`} value={`${c.sortKey}:desc`}>{c.header} (descending)</option>,
+            ])}
+          </Select>
+        </label>
+      )}
       <Table aria-label={label}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -101,7 +123,7 @@ export function DataTable<T>({
             rows.map((row) => (
               <TableRow key={getRowId(row)}>
                 {columns.map((c) => (
-                  <TableCell key={c.id} className={c.className}>
+                  <TableCell key={c.id} className={c.className} data-label={c.hideLabelOnMobile ? undefined : c.header}>
                     {c.cell(row)}
                   </TableCell>
                 ))}
@@ -118,7 +140,7 @@ export function DataTable<T>({
       </Table>
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{total === 0 ? "No results" : `Showing ${first}–${last} of ${total}`}</span>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">
             Rows per page
             <Select

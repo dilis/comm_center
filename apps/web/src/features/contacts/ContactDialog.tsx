@@ -91,7 +91,7 @@ export function ContactDialog({ contact, onClose }: { contact?: Contact; onClose
             <Input id="contact-name" {...register("name")} />
             <FieldError message={errors.name?.message} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="contact-type">Type</Label>
               <Select id="contact-type" disabled={!!contact?.user_id} {...register("type")}>

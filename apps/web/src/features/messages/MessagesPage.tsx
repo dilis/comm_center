@@ -107,6 +107,7 @@ export default function MessagesPage() {
     {
       id: "content",
       header: "Message",
+      className: "max-md:order-last", // last in the stacked phone card
       cell: (m) => <p className="line-clamp-2 max-w-md whitespace-pre-wrap break-words">{m.content}</p>,
     },
     {
@@ -124,6 +125,7 @@ export default function MessagesPage() {
       id: "actions",
       header: "Actions",
       className: "text-right",
+      hideLabelOnMobile: true,
       cell: (m) => (
         <div className="flex justify-end gap-1">
           <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => setDialog({ kind: "view", message: m })}>

@@ -19,7 +19,7 @@ export function SearchBox({
       type="search"
       aria-label={label}
       placeholder={placeholder ?? label}
-      className="w-64"
+      className="w-full sm:w-64"
       value={text}
       onChange={(e) => setText(e.target.value)}
     />
