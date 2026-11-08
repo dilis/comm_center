@@ -17,7 +17,7 @@ export function Tabs({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="inline-flex max-w-full overflow-x-auto rounded-lg bg-muted p-1">
+    <div role="tablist" aria-label={label} className="inline-flex max-w-full overflow-x-auto rounded-md border bg-muted p-0.5">
       {items.map((item) => (
         <button
           key={item.value}
@@ -27,7 +27,7 @@ export function Tabs({
           onClick={() => onChange(item.value)}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            item.value === value && "bg-background text-foreground shadow-sm",
+            item.value === value && "bg-card text-primary shadow-sm",
           )}
         >
           {item.icon}

@@ -41,9 +41,10 @@ export default function LoginPage() {
   });
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted p-4">
-      <form onSubmit={submit} noValidate className="w-full max-w-sm space-y-4 rounded-lg border bg-card p-6 shadow-sm">
-        <h1 className="text-xl font-semibold">Sign in</h1>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-brand p-4">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-foreground">Comm Center</p>
+      <form onSubmit={submit} noValidate className="w-full max-w-sm space-y-4 rounded-md border-t-4 border-t-accent-line bg-card p-8 shadow-xl">
+        <h1 className="text-xl font-semibold tracking-tight text-primary">Sign in</h1>
         <div className="space-y-1.5">
           <Label htmlFor="username">Username</Label>
           <Input id="username" autoComplete="username" autoFocus {...register("username")} />

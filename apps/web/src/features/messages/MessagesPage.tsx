@@ -33,7 +33,7 @@ type Dialog =
   | null;
 
 const STATUS_VARIANT = {
-  queued: "secondary", sending: "warning", sent: "success", delivered: "success", failed: "destructive", received: "default",
+  queued: "secondary", sending: "warning", sent: "success", delivered: "success", failed: "destructive", received: "info",
 } as const;
 
 // The same two arrows mark a message's direction in the table and the Sent/Received tabs.
