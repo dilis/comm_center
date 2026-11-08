@@ -2,13 +2,14 @@ import logging
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import login_limits, security
+from app.audit import record_activity
 from app.authz import AuthUser, check_assignable_groups, forbidden, require, scope
 from app.clock import utcnow
 from app.contact_ops import phones_by_contact, replace_phones
@@ -170,6 +171,7 @@ def list_users(
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
+    request: Request,
     caller: AuthUser = Depends(require("users", "create")),
     db: Session = Depends(get_db),
 ) -> UserOut:
@@ -210,6 +212,7 @@ def create_user(
         db.rollback()  # also discards a contact created above
         raise conflict(exc) from None
     set_groups(db, user.id, body.group_ids)
+    record_activity(db, request, caller.id, "create", "user", user.id, f"Created user {user.username}")
     db.commit()
     return to_out(db, [user])[0]
 
@@ -225,6 +228,7 @@ def read_user(
 def update_user(
     user_id: int,
     body: UserUpdate,
+    request: Request,
     caller: AuthUser = Depends(require("users", "update")),
     db: Session = Depends(get_db),
 ) -> UserOut:
@@ -255,6 +259,8 @@ def update_user(
         user.username = body.username
     if body.is_active is not None:
         user.is_active = body.is_active
+    changed = ", ".join(sorted(fields))
+    record_activity(db, request, caller.id, "update", "user", user.id, f"Updated user {user.username} ({changed})")
     try:
         db.commit()
     except IntegrityError as exc:
@@ -266,6 +272,7 @@ def update_user(
 @router.post("/{user_id}/unlock", status_code=status.HTTP_204_NO_CONTENT)
 def unlock_user(
     user_id: int,
+    request: Request,
     caller: AuthUser = Depends(require("users", "update")),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -273,6 +280,8 @@ def unlock_user(
     for a user who is not locked."""
     user = get_scoped(db, caller, user_id)
     login_limits.unlock_user(db, user.username, user.id)
+    record_activity(db, request, caller.id, "unlock", "user", user.id, f"Unlocked user {user.username}")
+    db.commit()
     log.info("user %s unlocked by user %s", user.id, caller.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -280,6 +289,7 @@ def unlock_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
+    request: Request,
     caller: AuthUser = Depends(require("users", "delete")),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -293,5 +303,6 @@ def delete_user(
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=now)
     )
+    record_activity(db, request, caller.id, "delete", "user", user.id, f"Deleted user {user.username}")
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

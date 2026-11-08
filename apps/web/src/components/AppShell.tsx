@@ -10,6 +10,7 @@ const PAGES = [
   { to: "/messages", label: "Messages", resource: "messages" },
   { to: "/contacts", label: "Contacts", resource: "contacts" },
   { to: "/users", label: "Users", resource: "users" },
+  { to: "/logs", label: "Logs", resource: "logs" },
 ] as const;
 
 export function useAllowedPages() {

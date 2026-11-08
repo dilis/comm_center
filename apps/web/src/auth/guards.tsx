@@ -26,7 +26,7 @@ export function RequireAuth() {
 }
 
 /** Renders the page only for callers who may read ``resource`` (the API enforces it again). */
-export function RequireRead({ resource }: { resource: "messages" | "contacts" | "users" }) {
+export function RequireRead({ resource }: { resource: "messages" | "contacts" | "users" | "logs" }) {
   const { permissions } = useAuth();
   if (!canReadResource(permissions, resource)) {
     return <p className="p-6">You don't have access to this page.</p>;

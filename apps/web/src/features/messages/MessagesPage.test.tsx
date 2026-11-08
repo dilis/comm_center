@@ -20,7 +20,7 @@ const failed = { ...base, id: 3, direction: "outbound", content: "never arrives"
 const queued = { ...base, id: 4, direction: "outbound", content: "waiting", status: "queued" };
 
 let requests: URL[];
-function backend(items: unknown[] = [out, incoming, failed], counts = { all: 3, sent: 2, received: 1 }) {
+function backend(items: unknown[] = [out, incoming, failed], counts = { all: 3, sent: 2, received: 1, unread: 1 }) {
   requests = [];
   server.use(
     http.get("*/api/messages/counts", () => HttpResponse.json(counts)),
@@ -91,8 +91,8 @@ describe("list", () => {
     await screen.findByRole("tab", { name: "Sent 2" });
     const tab = (name: string) => screen.getByRole("tab", { name });
     expect(tab("Sent 2").querySelector("svg.lucide-arrow-up-right")).not.toBeNull();
-    expect(tab("Received 1").querySelector("svg.lucide-arrow-down-left")).not.toBeNull();
-    expect(tab("All 3").querySelector("svg")).toBeNull();
+    expect(tab("Received 1/1").querySelector("svg.lucide-arrow-down-left")).not.toBeNull();
+    expect(tab("All 1/3").querySelector("svg")).toBeNull();
   });
 
   test("asks for the newest first, on the All tab", async () => {
@@ -102,14 +102,37 @@ describe("list", () => {
     expect(lastQuery()).toMatchObject({ direction: "all", order: "desc", page: "1", page_size: "20" });
   });
 
+  test("All and Received show unread out of total, Sent shows just its total", async () => {
+    backend([out, incoming], { all: 12, sent: 7, received: 5, unread: 3 });
+    await open();
+    expect(await screen.findByRole("tab", { name: "All 3/12" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Received 3/5" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Sent 7" })).toBeInTheDocument();
+  });
+
+  test("the All and Received tabs stand out while something is unread, and calm down when not", async () => {
+    backend([out, incoming], { all: 12, sent: 7, received: 5, unread: 3 });
+    await open();
+    expect(await screen.findByRole("tab", { name: "All 3/12" })).toHaveAttribute("data-attention", "true");
+    expect(screen.getByRole("tab", { name: "Received 3/5" })).toHaveAttribute("data-attention", "true");
+    expect(screen.getByRole("tab", { name: "Sent 7" })).not.toHaveAttribute("data-attention");
+  });
+
+  test("nothing is highlighted when everything has been read", async () => {
+    backend([out, incoming], { all: 12, sent: 7, received: 5, unread: 0 });
+    await open();
+    expect(await screen.findByRole("tab", { name: "All 0/12" })).not.toHaveAttribute("data-attention");
+    expect(screen.getByRole("tab", { name: "Received 0/5" })).not.toHaveAttribute("data-attention");
+  });
+
   test("tabs show scoped counts and switch the direction", async () => {
     backend();
     await open();
-    expect(await screen.findByRole("tab", { name: "All 3" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: "All 1/3" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Sent 2" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("tab", { name: "Received 1" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Received 1/1" }));
     await waitFor(() => expect(lastQuery()).toMatchObject({ direction: "received", page: "1" }));
-    expect(screen.getByRole("tab", { name: "Received 1" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Received 1/1" })).toHaveAttribute("aria-selected", "true");
   });
 
   test("the tab is restored from the URL", async () => {
@@ -238,7 +261,7 @@ describe("list", () => {
   });
 
   test("empty state", async () => {
-    backend([], { all: 0, sent: 0, received: 0 });
+    backend([], { all: 0, sent: 0, received: 0, unread: 0 });
     await open();
     expect(await screen.findByText("No messages found.")).toBeInTheDocument();
   });
@@ -253,18 +276,18 @@ describe("live updates", () => {
     let arrived = false;
     server.use(
       http.get("*/api/messages/counts", () =>
-        HttpResponse.json(arrived ? { all: 2, sent: 1, received: 1 } : { all: 1, sent: 1, received: 0 }),
+        HttpResponse.json(arrived ? { all: 2, sent: 1, received: 1, unread: 1 } : { all: 1, sent: 1, received: 0, unread: 0 }),
       ),
       http.get("*/api/messages", () => HttpResponse.json(page(arrived ? [incoming, out] : [out]))),
     );
     await open();
     expect(await screen.findByText("hello Ana")).toBeInTheDocument();
     expect(screen.queryByText("hi from Ana")).not.toBeInTheDocument();
-    expect(await screen.findByRole("tab", { name: "Received 0" })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Received 0/0" })).toBeInTheDocument();
     arrived = true;
     expect(await screen.findByText("hi from Ana")).toBeInTheDocument();
-    expect(await screen.findByRole("tab", { name: "Received 1" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "All 2" })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Received 1/1" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "All 1/2" })).toBeInTheDocument();
   });
 
   test("the page, filters and tab you chose are kept across refreshes", async () => {
@@ -282,7 +305,7 @@ describe("live updates", () => {
   test("a queued message is refreshed until the worker has sent it", async () => {
     let calls = 0;
     server.use(
-      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0 })),
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0, unread: 0 })),
       http.get("*/api/messages", () => HttpResponse.json(page([++calls < 3 ? queued : { ...queued, status: "sent" }]))),
     );
     await open();
@@ -294,7 +317,7 @@ describe("live updates", () => {
   test("a failed background refresh keeps the rows on screen and the next one recovers", async () => {
     let failing = false;
     server.use(
-      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0 })),
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 1, sent: 1, received: 0, unread: 0 })),
       http.get("*/api/messages", () =>
         failing ? HttpResponse.json({ detail: "temporarily down" }, { status: 500 }) : HttpResponse.json(page([out])),
       ),
@@ -311,7 +334,7 @@ describe("live updates", () => {
 
   test("a failing first load still reports the error", async () => {
     server.use(
-      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0 })),
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0, unread: 0 })),
       http.get("*/api/messages", () => HttpResponse.json({ detail: "temporarily down" }, { status: 500 })),
     );
     await open();

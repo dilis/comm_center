@@ -34,6 +34,8 @@ ALLOWED = {
     "POST /users/{u}/unlock": {"admin"},
     "GET /groups": {"admin"},
     "GET /devices": {"admin", "operator", "auditor"},
+    "GET /logs/activity": {"admin", "auditor"},
+    "GET /logs/logins": {"admin", "auditor"},
     "GET /messages": {"admin", "operator", "agent", "auditor"},
     "GET /messages/counts": {"admin", "operator", "agent", "auditor"},
     "POST /messages/send": {"admin", "operator", "agent"},

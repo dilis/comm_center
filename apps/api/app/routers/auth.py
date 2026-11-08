@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import login_limits, security
+from app.audit import client_ip, record_activity, record_login
 from app.authz import AuthUser
 from app.clock import utcnow
 from app.config import settings
@@ -61,16 +62,16 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=security.MIN_PASSWORD_LENGTH, max_length=256)
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def _too_many(wait: int) -> HTTPException:
     return HTTPException(
         status.HTTP_429_TOO_MANY_REQUESTS,
         "too many failed attempts; try again later",
         headers={"Retry-After": str(wait)},
     )
+
+
+def _user_id_of(db: Session, username: str) -> int | None:
+    return db.scalars(select(User.id).where(User.username == username)).one_or_none()
 
 
 def _issue_tokens(db: Session, user_id: int) -> TokenPair:
@@ -99,21 +100,25 @@ def _revoke_all(db: Session, user_id: int) -> None:
 
 @router.post("/login", response_model=TokenPair)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
-    ip = _client_ip(request)
+    ip = client_ip(request)
     key = login_limits.normalize_username(body.username)
     wait = login_limits.blocked_for(db, login_limits.LOGIN, key, ip)
     if wait:
         log.warning("login blocked for %r from %s: too many failures", body.username[:64], ip)
+        record_login(db, request, "login_blocked", body.username, _user_id_of(db, body.username))
+        db.commit()
         raise _too_many(wait)
     user = db.scalars(select(User).where(User.username == body.username)).one_or_none()
     # Always verify a hash so the response time does not reveal whether the username exists.
     hash_ = user.password_hash if user and user.password_hash else security.DUMMY_HASH
     valid = security.verify_password(hash_, body.password)
     if not (valid and can_log_in(user)):
+        record_login(db, request, "login_failed", body.username, user.id if user else None)
         login_limits.record_failure(db, login_limits.LOGIN, key, ip)
         log.warning("failed login for %r from %s", body.username[:64], ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    login_limits.forget_failures(db, login_limits.LOGIN, key)
+    record_login(db, request, "login", user.username, user.id)
+    login_limits.forget_failures(db, login_limits.LOGIN, key)  # commits the log row too
     return _issue_tokens(db, user.id)
 
 
@@ -121,19 +126,19 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -
 def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
     """Rotate: the presented refresh token is spent and a new pair is issued. Invalid or replayed
     tokens count against the caller's address (a valid refresh never does)."""
-    ip = _client_ip(request)
+    ip = client_ip(request)
     wait = login_limits.blocked_for(db, login_limits.REFRESH, "", ip)
     if wait:
         log.warning("refresh blocked for %s: too many invalid tokens", ip)
         raise _too_many(wait)
     try:
-        return _rotate(db, body.refresh_token)
+        return _rotate(db, body.refresh_token, request)
     except HTTPException:
         login_limits.record_failure(db, login_limits.REFRESH, "", ip)
         raise
 
 
-def _rotate(db: Session, refresh_token: str) -> TokenPair:
+def _rotate(db: Session, refresh_token: str, request: Request) -> TokenPair:
     try:
         claims = security.decode_token(refresh_token, "refresh")
     except security.TokenError:
@@ -146,6 +151,8 @@ def _rotate(db: Session, refresh_token: str) -> TokenPair:
     if stored.revoked_at is not None:
         # A spent token came back: assume it leaked and end every session of this user.
         _revoke_all(db, stored.user_id)
+        owner = db.scalars(select(User.username).where(User.id == stored.user_id)).one_or_none()
+        record_login(db, request, "sessions_revoked", owner or "", stored.user_id)
         db.commit()
         raise unauthorized()
     user = db.scalars(select(User).where(User.id == stored.user_id)).one_or_none()
@@ -156,17 +163,21 @@ def _rotate(db: Session, refresh_token: str) -> TokenPair:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(body: RefreshRequest, db: Session = Depends(get_db)) -> Response:
+def logout(body: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> Response:
     """Revoke the refresh token. Idempotent; the short-lived access token simply expires."""
     try:
         claims = security.decode_token(body.refresh_token, "refresh")
     except security.TokenError:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-    db.execute(
+    revoked = db.execute(
         update(RefreshToken)
         .where(RefreshToken.jti == claims["jti"], RefreshToken.revoked_at.is_(None))
         .values(revoked_at=utcnow())
     )
+    if revoked.rowcount:  # a repeated logout is not a second sign-out
+        owner = db.scalars(select(User).where(User.id == int(claims["sub"]))).one_or_none()
+        if owner:
+            record_login(db, request, "logout", owner.username, owner.id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -211,6 +222,7 @@ def read_me(
 @router.patch("/me/profile", response_model=MeOut)
 def update_profile(
     body: ProfileUpdate,
+    request: Request,
     user: User = Depends(get_current_user_row),
     auth: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -223,6 +235,7 @@ def update_profile(
         contact.email = None
     elif body.email is not None:
         contact.email = body.email
+    record_activity(db, request, user.id, "update", "profile", user.id, "Updated own profile")
     db.commit()
     return _me(db, user, auth)
 
@@ -230,12 +243,14 @@ def update_profile(
 @router.put("/me/phones", response_model=MeOut)
 def replace_phones(
     body: PhonesUpdate,
+    request: Request,
     user: User = Depends(get_current_user_row),
     auth: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MeOut:
     """Replace the caller's phone list: absent numbers are soft-deleted, new ones added."""
     replace_contact_phones(db, user.contact_id, body.phones)
+    record_activity(db, request, user.id, "update", "phones", user.id, "Updated own phone numbers")
     db.commit()
     return _me(db, user, auth)
 
@@ -247,7 +262,7 @@ def change_password(
     user: User = Depends(get_current_user_row),
     db: Session = Depends(get_db),
 ) -> Response:
-    key, ip = str(user.id), _client_ip(request)
+    key, ip = str(user.id), client_ip(request)
     wait = login_limits.blocked_for(db, login_limits.PASSWORD, key, ip)
     if wait:
         log.warning("password change blocked for user %s: too many wrong passwords", user.id)
@@ -259,5 +274,6 @@ def change_password(
     login_limits.forget_failures(db, login_limits.PASSWORD, key)
     user.password_hash = security.hash_password(body.new_password)
     _revoke_all(db, user.id)  # other sessions must log in again
+    record_activity(db, request, user.id, "change_password", "account", user.id, "Changed own password")
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

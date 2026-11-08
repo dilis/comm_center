@@ -63,7 +63,7 @@ def test_new_nesting_in_closure_is_honoured(conn, session):
     "holder, assignable, refused",
     [
         ("admin", ["admin", "operator", "agent", "auditor", "users_admin"], []),
-        ("operator", ["agent", "auditor", "contacts_viewer", "messages_viewer"], ["admin", "users_admin", "contacts_admin"]),
+        ("operator", ["agent", "contacts_viewer", "messages_viewer"], ["admin", "users_admin", "contacts_admin", "auditor", "logs_viewer"]),
         ("agent", ["contacts_viewer", "messages_agent"], ["operator", "auditor", "users_viewer", "admin"]),
     ],
 )
