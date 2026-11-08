@@ -26,6 +26,7 @@ The same few variables drive every mode.
 | `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | GSM worker | Optional: idle wait between cycles, sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched every cycle for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
 | `LOG_LEVEL` | API, GSM worker | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` | `INFO` |
 | `LOGIN_MAX_FAILURES`, `LOGIN_MAX_FAILURES_PER_IP`, `LOGIN_LOCKOUT_SECONDS` | API | Login rate limiting: failed sign-ins allowed for one username, and for one client address, within the window; the window (and so the longest lockout) in seconds | `5`, `20`, `900` |
+| `PASSWORD_MAX_FAILURES`, `REFRESH_MAX_FAILURES_PER_IP` | API | Same window: wrong current passwords allowed per user in `PUT /auth/me/password`, and invalid refresh tokens allowed per client address in `POST /auth/refresh` | `5`, `30` |
 | `FORWARDED_ALLOW_IPS` | API (uvicorn) | Proxy addresses whose `X-Forwarded-For` is believed; see [Login rate limiting](#login-rate-limiting) | `127.0.0.1` (compose sets `*`) |
 | `API_UPSTREAM` | Web container | `host:port` nginx forwards `/api/` to, as seen from the web container. Set with `-e` outside compose. | `api:8000` |
 | `API_PROXY_TARGET` | `pnpm dev`, `vite preview` | URL those two forward `/api` to | `http://127.0.0.1:8000` |
@@ -52,7 +53,7 @@ Rules:
 
 ## Initial migrations
 
-The schema and starting data are created by six Alembic migrations in `apps/api/alembic/versions/`:
+The schema and starting data are created by seven Alembic migrations in `apps/api/alembic/versions/`:
 
 | Revision | What it does |
 |---|---|
@@ -62,6 +63,7 @@ The schema and starting data are created by six Alembic migrations in `apps/api/
 | `0004` | Adds `messages.reply_to_id`, linking a reply to the received message it answers |
 | `0005` | Adds `login_attempt`, the failed sign-ins behind login rate limiting |
 | `0006` | Adds `gsm_device.last_error` and `last_error_at`, the latest modem problem shown in the app |
+| `0007` | Adds `login_attempt.kind`, so sign-in, password-change and token-refresh failures are counted apart |
 
 What to know:
 - **No human user is seeded.** There is no default credential. Create the first admin once, after migrating: `ADMIN_PASSWORD=... pnpm --filter @comm-center/api create-admin --username NAME` (it prompts for the password if `ADMIN_PASSWORD` is unset, needs at least 10 characters, and refuses to run once any human user exists). In the API container: `docker compose exec api /opt/venv/bin/python -m app.cli create-admin --username NAME`.
@@ -69,7 +71,7 @@ What to know:
 - **Native processes migrate explicitly:** `pnpm db:migrate`.
 - **The trigger needs a server setting.** `0001` creates a trigger, and MySQL only lets a non-SUPER user do that when `log_bin_trust_function_creators=1`. The compose file and the commands below already pass `--log-bin-trust-function-creators=1`. A MySQL you provide yourself needs it too, for example `SET GLOBAL log_bin_trust_function_creators = 1;` or the same line under `[mysqld]` in its config. Without it, migration `0001` fails with error 1419.
 - **A failed migration leaves partial tables.** MySQL DDL is not transactional. If a migration fails midway, drop and recreate the database before retrying (the data is only what the migrations created).
-- **Check the state** with `alembic current` (see each mode). A healthy database reports `0006 (head)`.
+- **Check the state** with `alembic current` (see each mode). A healthy database reports `0007 (head)`.
 
 ## 1. Separate containers
 
@@ -112,7 +114,7 @@ curl http://127.0.0.1:8000/health                        # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'          # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                    # {"status":"ok"}: the web container reaches the API
 docker run --rm --network cc-net --env-file deploy/api.env comm-center-api \
-  /opt/venv/bin/alembic current                          # 0006 (head)
+  /opt/venv/bin/alembic current                          # 0007 (head)
 ```
 
 Run migrations by hand (for example after pulling a new version, before replacing the API container):
@@ -152,7 +154,7 @@ cp .env.example .env     # edit it; DATABASE_URL must match the database you use
 ```sh
 pnpm install                                  # JS dependencies into ./node_modules
 (cd apps/api && uv sync --no-dev)             # Python dependencies into apps/api/.venv (use plain `uv sync` if you also want the tests)
-pnpm db:migrate                               # applies 0001 to 0006
+pnpm db:migrate                               # applies 0001 to 0007
 
 # API (keep it running; add --reload only for development)
 cd apps/api && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -169,7 +171,7 @@ Verify:
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
 curl http://127.0.0.1:8080/api/health                  # {"status":"ok"}: the proxy reaches the API
-(cd apps/api && uv run alembic current)                # 0006 (head)
+(cd apps/api && uv run alembic current)                # 0007 (head)
 ```
 
 ## 3. Docker Compose
@@ -188,7 +190,7 @@ Verify (use your `API_PORT` and `WEB_PORT`):
 docker compose --profile app ps                        # db, api and web all (healthy)
 curl http://127.0.0.1:8000/health                      # {"status":"ok"}
 curl -s http://127.0.0.1:8080/ | grep '<title>'        # <title>Comm Center</title>
-docker compose exec api /opt/venv/bin/alembic current  # 0006 (head)
+docker compose exec api /opt/venv/bin/alembic current  # 0007 (head)
 ```
 
 Run migrations by hand:
@@ -239,6 +241,10 @@ Modem problems are also visible in the app. The worker records a device's `statu
 ## Login rate limiting
 
 `POST /auth/login` counts failed attempts in the `login_attempt` table (so all API processes share the count). After `LOGIN_MAX_FAILURES` failures for one username (case and surrounding spaces ignored; unknown usernames count too, so nothing reveals which exist), or `LOGIN_MAX_FAILURES_PER_IP` from one address, within `LOGIN_LOCKOUT_SECONDS`, sign-in answers `429` with a `Retry-After` header until the oldest of those failures ages out. A correct password does not get through while locked; attempts made while locked are not counted, so they do not extend the lock; a successful sign-in clears that username's failures.
+
+The same mechanism protects two more endpoints, each with its own counter: `PUT /auth/me/password` (someone at an unlocked session guessing the current password: `PASSWORD_MAX_FAILURES` per user) and `POST /auth/refresh` (invalid or replayed refresh tokens: `REFRESH_MAX_FAILURES_PER_IP` per address; a valid refresh is never counted). Both answer `429` the same way. Other endpoints need a valid access token and have no limit.
+
+**Unlocking:** an administrator (anyone with `users:update`) can clear a user's lock at once with the unlock button on the Users page (`POST /users/{id}/unlock`), which also clears that user's password-guessing counter. Locked users show a *Locked* badge (`locked` in `GET /users`). An address blocked by the per-address limit cannot be unlocked this way; it waits out the window.
 
 Two things to know:
 - A lockout can be triggered against a real user by anyone who knows the username (the usual trade-off); it lifts by itself after the window.

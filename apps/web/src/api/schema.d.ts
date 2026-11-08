@@ -126,7 +126,8 @@ export interface paths {
         put?: never;
         /**
          * Refresh
-         * @description Rotate: the presented refresh token is spent and a new pair is issued.
+         * @description Rotate: the presented refresh token is spent and a new pair is issued. Invalid or replayed
+         *     tokens count against the caller's address (a valid refresh never does).
          */
         post: operations["refresh_auth_refresh_post"];
         delete?: never;
@@ -379,6 +380,27 @@ export interface paths {
         post?: never;
         /** Delete User */
         delete: operations["delete_user_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock User
+         * @description Clear the failed sign-ins (and wrong-password guesses) that lock this user out. Harmless
+         *     for a user who is not locked.
+         */
+        post: operations["unlock_user_users__user_id__unlock_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -755,6 +777,8 @@ export interface components {
             id: number;
             /** Is Active */
             is_active: boolean;
+            /** Locked */
+            locked: boolean;
             /** Name */
             name: string;
             /** Owner Id */
@@ -1614,6 +1638,35 @@ export interface operations {
         };
     };
     delete_user_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_user_users__user_id__unlock_post: {
         parameters: {
             query?: never;
             header?: never;

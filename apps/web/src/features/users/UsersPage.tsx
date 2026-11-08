@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { LockOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -51,6 +51,11 @@ export default function UsersPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
+  const unlock = useMutation({
+    mutationFn: (user: User) => unwrap(api.POST("/users/{user_id}/unlock", { params: { path: { user_id: user.id } } })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
+
   const columns: Column<User>[] = [
     { id: "username", header: "Username", sortKey: "username", cell: (u) => <span className="font-medium">{u.username}</span> },
     { id: "name", header: "Name", cell: (u) => u.name },
@@ -67,7 +72,16 @@ export default function UsersPage() {
         </div>
       ),
     },
-    { id: "status", header: "Status", cell: (u) => <Badge variant={u.is_active ? "success" : "warning"}>{u.is_active ? "Active" : "Inactive"}</Badge> },
+    {
+      id: "status",
+      header: "Status",
+      cell: (u) => (
+        <div className="flex flex-wrap gap-1">
+          <Badge variant={u.is_active ? "success" : "warning"}>{u.is_active ? "Active" : "Inactive"}</Badge>
+          {u.locked && <Badge variant="destructive">Locked</Badge>}
+        </div>
+      ),
+    },
     { id: "created", header: "Created", sortKey: "created_at", cell: (u) => formatDateTime(u.created_at) },
     {
       id: "actions",
@@ -76,6 +90,11 @@ export default function UsersPage() {
       hideLabelOnMobile: true,
       cell: (u) => (
         <div className="flex justify-end gap-1">
+          {u.locked && canActOn("users", "update", u.owner_id) && (
+            <Button variant="ghost" size="icon" aria-label={`Unlock ${u.username}`} title="Unlock: clear the failed sign-ins" disabled={unlock.isPending} onClick={() => unlock.mutate(u)}>
+              <LockOpen className="h-4 w-4" aria-hidden />
+            </Button>
+          )}
           {canActOn("users", "update", u.owner_id) && (
             <Button variant="ghost" size="icon" aria-label={`Edit ${u.username}`} onClick={() => setDialog({ kind: "edit", user: u })}>
               <Pencil className="h-4 w-4" aria-hidden />
@@ -115,6 +134,11 @@ export default function UsersPage() {
           </Select>
         </label>
       </div>
+      {unlock.isError && (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {errorMessage(unlock.error)}
+        </p>
+      )}
       <DataTable
         label="Users"
         columns={columns}

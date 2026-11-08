@@ -1060,6 +1060,10 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1090,6 +1094,7 @@
           "is_active",
           "owner_id",
           "groups",
+          "locked",
           "created_at"
         ],
         "title": "UserOut",
@@ -1470,7 +1475,7 @@
     },
     "/auth/refresh": {
       "post": {
-        "description": "Rotate: the presented refresh token is spent and a new pair is issued.",
+        "description": "Rotate: the presented refresh token is spent and a new pair is issued. Invalid or replayed\ntokens count against the caller's address (a valid refresh never does).",
         "operationId": "refresh_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -2660,6 +2665,47 @@
           }
         ],
         "summary": "Update User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{user_id}/unlock": {
+      "post": {
+        "description": "Clear the failed sign-ins (and wrong-password guesses) that lock this user out. Harmless\nfor a user who is not locked.",
+        "operationId": "unlock_user_users__user_id__unlock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unlock User",
         "tags": [
           "users"
         ]

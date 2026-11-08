@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_max_failures_per_ip: int = 20
     login_lockout_seconds: int = 15 * 60
+    # Same window, for other endpoints: wrong current passwords in PUT /auth/me/password (per
+    # user) and invalid refresh tokens in POST /auth/refresh (per client address).
+    password_max_failures: int = 5
+    refresh_max_failures_per_ip: int = 30
     # Region used to read phone numbers typed without a country code.
     default_phone_region: str = "PH"
 

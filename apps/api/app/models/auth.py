@@ -35,7 +35,9 @@ class LoginAttempt(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(255), nullable=False)  # normalized, may not exist
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="login")
+    # who it was aimed at: the normalized username (may not exist), or a user id for "password"
+    username: Mapped[str] = mapped_column(String(255), nullable=False)
     ip: Mapped[str] = mapped_column(String(45), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")

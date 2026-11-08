@@ -61,6 +61,18 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=security.MIN_PASSWORD_LENGTH, max_length=256)
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many(wait: int) -> HTTPException:
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "too many failed attempts; try again later",
+        headers={"Retry-After": str(wait)},
+    )
+
+
 def _issue_tokens(db: Session, user_id: int) -> TokenPair:
     access, _ = security.create_token(user_id, "access", settings.access_token_ttl_seconds)
     refresh, jti = security.create_token(user_id, "refresh", settings.refresh_token_ttl_seconds)
@@ -87,32 +99,43 @@ def _revoke_all(db: Session, user_id: int) -> None:
 
 @router.post("/login", response_model=TokenPair)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
-    ip = request.client.host if request.client else "unknown"
-    wait = login_limits.blocked_for(db, body.username, ip)
+    ip = _client_ip(request)
+    key = login_limits.normalize_username(body.username)
+    wait = login_limits.blocked_for(db, login_limits.LOGIN, key, ip)
     if wait:
         log.warning("login blocked for %r from %s: too many failures", body.username[:64], ip)
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "too many failed sign-in attempts; try again later",
-            headers={"Retry-After": str(wait)},
-        )
+        raise _too_many(wait)
     user = db.scalars(select(User).where(User.username == body.username)).one_or_none()
     # Always verify a hash so the response time does not reveal whether the username exists.
     hash_ = user.password_hash if user and user.password_hash else security.DUMMY_HASH
     valid = security.verify_password(hash_, body.password)
     if not (valid and can_log_in(user)):
-        login_limits.record_failure(db, body.username, ip)
+        login_limits.record_failure(db, login_limits.LOGIN, key, ip)
         log.warning("failed login for %r from %s", body.username[:64], ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    login_limits.forget_failures(db, body.username)
+    login_limits.forget_failures(db, login_limits.LOGIN, key)
     return _issue_tokens(db, user.id)
 
 
 @router.post("/refresh", response_model=TokenPair)
-def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
-    """Rotate: the presented refresh token is spent and a new pair is issued."""
+def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
+    """Rotate: the presented refresh token is spent and a new pair is issued. Invalid or replayed
+    tokens count against the caller's address (a valid refresh never does)."""
+    ip = _client_ip(request)
+    wait = login_limits.blocked_for(db, login_limits.REFRESH, "", ip)
+    if wait:
+        log.warning("refresh blocked for %s: too many invalid tokens", ip)
+        raise _too_many(wait)
     try:
-        claims = security.decode_token(body.refresh_token, "refresh")
+        return _rotate(db, body.refresh_token)
+    except HTTPException:
+        login_limits.record_failure(db, login_limits.REFRESH, "", ip)
+        raise
+
+
+def _rotate(db: Session, refresh_token: str) -> TokenPair:
+    try:
+        claims = security.decode_token(refresh_token, "refresh")
     except security.TokenError:
         raise unauthorized() from None
     stored = db.scalars(
@@ -220,11 +243,20 @@ def replace_phones(
 @router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     body: PasswordChange,
+    request: Request,
     user: User = Depends(get_current_user_row),
     db: Session = Depends(get_db),
 ) -> Response:
+    key, ip = str(user.id), _client_ip(request)
+    wait = login_limits.blocked_for(db, login_limits.PASSWORD, key, ip)
+    if wait:
+        log.warning("password change blocked for user %s: too many wrong passwords", user.id)
+        raise _too_many(wait)
     if not security.verify_password(user.password_hash, body.current_password):
+        login_limits.record_failure(db, login_limits.PASSWORD, key, ip)
+        log.warning("wrong current password for user %s from %s", user.id, ip)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is incorrect")
+    login_limits.forget_failures(db, login_limits.PASSWORD, key)
     user.password_hash = security.hash_password(body.new_password)
     _revoke_all(db, user.id)  # other sessions must log in again
     db.commit()

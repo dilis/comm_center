@@ -7,7 +7,7 @@ import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const user = (id: number, username: string, over: Record<string, unknown> = {}) => ({
   id, username, contact_id: 100 + id, name: `${username} Name`, email: `${username}@example.com`, phones: [],
-  is_active: true, owner_id: 1, groups: [{ id: 3, name: "agent" }], created_at: "2026-11-01T08:00:00", ...over,
+  is_active: true, owner_id: 1, groups: [{ id: 3, name: "agent" }], locked: false, created_at: "2026-11-01T08:00:00", ...over,
 });
 const me = user(1, "tester", { groups: [{ id: 1, name: "admin" }] }); // meFor() is user id 1
 const bea = user(2, "bea");
@@ -255,5 +255,48 @@ describe("delete", () => {
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("user not found");
+  });
+});
+
+describe("unlock", () => {
+  const dee = user(4, "dee", { locked: true });
+
+  test("a locked-out user is marked and can be unlocked, after which the list refreshes", async () => {
+    let locked = true;
+    let unlocked = 0;
+    server.use(
+      http.get("*/api/users", () => HttpResponse.json(page([me, user(4, "dee", { locked })]))),
+      http.post("*/api/users/4/unlock", () => ((unlocked += 1), (locked = false), new HttpResponse(null, { status: 204 }))),
+      http.get("*/api/groups", () => HttpResponse.json(page(groups))),
+    );
+    await open();
+    const row = (await screen.findByText("dee")).closest("tr")!;
+    expect(within(row).getByText("Locked")).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole("button", { name: "Unlock dee" }));
+    await waitFor(() => expect(unlocked).toBe(1));
+    await waitFor(() => expect(screen.queryByText("Locked")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Unlock dee" })).not.toBeInTheDocument();
+  });
+
+  test("users who are not locked have no Unlock button", async () => {
+    backend();
+    await open();
+    await screen.findByText("bea");
+    expect(screen.queryByRole("button", { name: /Unlock/ })).not.toBeInTheDocument();
+  });
+
+  test("without users:update there is no Unlock button", async () => {
+    backend([me, dee]);
+    await open(["users:read_all"]);
+    await screen.findByText("dee");
+    expect(screen.queryByRole("button", { name: "Unlock dee" })).not.toBeInTheDocument();
+  });
+
+  test("a server refusal is shown", async () => {
+    backend([me, dee]);
+    server.use(http.post("*/api/users/4/unlock", () => HttpResponse.json({ detail: "user not found" }, { status: 404 })));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock dee" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("user not found");
   });
 });

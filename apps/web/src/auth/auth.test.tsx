@@ -71,14 +71,14 @@ describe("login", () => {
   test("when sign-in is rate limited the form shows the server's message", async () => {
     server.use(
       http.post("*/api/auth/login", () =>
-        HttpResponse.json({ detail: "too many failed sign-in attempts; try again later" }, { status: 429, headers: { "Retry-After": "60" } }),
+        HttpResponse.json({ detail: "too many failed attempts; try again later" }, { status: 429, headers: { "Retry-After": "60" } }),
       ),
     );
     renderApp("/login");
     await userEvent.type(await screen.findByLabelText("Username"), "tester");
     await userEvent.type(screen.getByLabelText("Password"), "nope");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("too many failed sign-in attempts");
+    expect(await screen.findByRole("alert")).toHaveTextContent("too many failed attempts");
     expect(localStorage.getItem("cc.refresh")).toBeNull();
   });
 

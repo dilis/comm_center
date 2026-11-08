@@ -31,6 +31,7 @@ ALLOWED = {
     "GET /users/{u}": {"admin", "operator", "auditor"},
     "PUT /users/{u}": {"admin"},
     "DELETE /users/{u}": {"admin"},
+    "POST /users/{u}/unlock": {"admin"},
     "GET /groups": {"admin"},
     "GET /devices": {"admin", "operator", "auditor"},
     "GET /messages": {"admin", "operator", "agent", "auditor"},
