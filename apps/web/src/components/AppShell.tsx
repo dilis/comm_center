@@ -31,8 +31,8 @@ export default function AppShell() {
   const pages = useAllowedPages();
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-4 py-3 sm:px-6">
-        <span className="font-semibold">Comm Center</span>
+      <header className="flex flex-wrap items-center gap-x-8 gap-y-2 border-b-2 border-accent-line bg-brand px-4 py-3 text-brand-foreground shadow-sm sm:px-6">
+        <span className="text-sm font-semibold uppercase tracking-[0.14em]">Comm Center</span>
         <nav aria-label="Main" className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
           {pages.map((p) => (
             <NavLink
@@ -40,8 +40,8 @@ export default function AppShell() {
               to={p.to}
               className={({ isActive }) =>
                 cn(
-                  "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted",
-                  isActive && "bg-muted text-foreground",
+                  "shrink-0 rounded px-3 py-1.5 text-sm font-medium text-brand-foreground/70 transition-colors hover:bg-white/10 hover:text-brand-foreground",
+                  isActive && "bg-white/15 text-brand-foreground",
                 )
               }
             >
@@ -50,14 +50,14 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
-          <span className="truncate">{me?.name}</span>
-          <Button variant="outline" size="sm" onClick={() => void logout()}>
+          <span className="truncate text-brand-foreground/90">{me?.name}</span>
+          <Button variant="outline" size="sm" className="border-white/30 bg-transparent text-brand-foreground hover:bg-white/10" onClick={() => void logout()}>
             <LogOut className="h-4 w-4" aria-hidden />
             Sign out
           </Button>
         </div>
       </header>
-      <main className="min-w-0 flex-1 p-4 sm:p-6">
+      <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 p-4 sm:p-6">
         <Outlet />
       </main>
     </div>
