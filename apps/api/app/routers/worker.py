@@ -1,14 +1,13 @@
 """The API a worker program uses (SPECS.md 4.7). Workers always call the API, never the reverse."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from time import monotonic, sleep
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import dispatch, login_limits, security
@@ -17,8 +16,8 @@ from app.clock import utcnow
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_worker
-from app.inbound import ingest_message
-from app.models import GsmDevice, InboundRef, WorkerAccount
+from app.inbound import store_inbound
+from app.models import GsmDevice, WorkerAccount
 from app.worker_accounts import authenticate_worker
 
 log = logging.getLogger(__name__)
@@ -244,41 +243,9 @@ def inbound(
     """Store a received SMS, finding or creating the sender's contact. Answers 200 only after the
     commit, so the worker may then forget the message on the device."""
     device = _own_device(db, worker, body.device_id)
-
-    def seen() -> InboundOut | None:
-        existing = db.scalars(
-            select(InboundRef).where(InboundRef.device_id == device.id, InboundRef.ref == body.ref)
-        ).one_or_none()
-        if existing is None:
-            return None
-        return InboundOut(stored=False, duplicate=True, message_id=existing.message_id)
-
-    if (dup := seen()) is not None:
-        db.commit()
-        return dup
-    received = body.received_at
-    if received.tzinfo is not None:
-        received = received.astimezone(UTC).replace(tzinfo=None)
-    try:
-        with db.begin_nested():
-            message = ingest_message(db, device.agent_user_id, body.sender, body.content, received)
-            db.add(
-                InboundRef(
-                    device_id=device.id, ref=body.ref, message_id=message.id if message else None
-                )
-            )
-            db.flush()
-    except IntegrityError as exc:
-        if "uq_inbound_ref_device_id_ref" not in str(exc):
-            raise
-        dup = seen()  # another request stored it first
-        db.commit()
-        if dup is None:
-            raise
-        return dup
-    db.commit()
+    result = store_inbound(db, device, body.ref, body.sender, body.content, body.received_at)
     return InboundOut(
-        stored=message is not None, duplicate=False, message_id=message.id if message else None
+        stored=result.stored, duplicate=result.duplicate, message_id=result.message_id
     )
 
 

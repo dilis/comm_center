@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-only-secret-change-me-dev-only-secret"
+DEV_WEBHOOK_SECRET = "dev-only-webhook-secret-change-me-dev-only"
 
 
 class Settings(BaseSettings):
@@ -9,6 +10,9 @@ class Settings(BaseSettings):
     # Signs access and refresh tokens. The default is for development only: set a long random
     # value (for example `openssl rand -hex 32`) anywhere else.
     jwt_secret: str = DEV_JWT_SECRET
+    # Derives each Android device's webhook signing key (see `webhook-info`). Set a long random value
+    # anywhere else; changing it means re-entering the key in every phone.
+    webhook_secret: str = DEV_WEBHOOK_SECRET
     access_token_ttl_seconds: int = 15 * 60
     refresh_token_ttl_seconds: int = 7 * 24 * 60 * 60
     # Workers sign in again when this runs out (they have no refresh token).

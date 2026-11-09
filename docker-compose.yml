@@ -27,6 +27,8 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret}
+      # Derives each Android phone's webhook signing key (`app.cli webhook-info`).
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-only-webhook-secret-change-me-dev-only}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Believe the web container's X-Forwarded-For, so login rate limiting sees each visitor's
       # address rather than nginx's. Safe only while nothing untrusted can reach the API port

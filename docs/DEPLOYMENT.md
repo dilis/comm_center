@@ -22,6 +22,7 @@ The same few variables drive every mode.
 | `MYSQL_PASSWORD` | MySQL container | Application user's password | `comm_center` |
 | `DATABASE_URL` | API | SQLAlchemy URL, `mysql+pymysql://USER:PASSWORD@HOST:PORT/DATABASE` | the dev values on `127.0.0.1:3307` |
 | `JWT_SECRET` | API | Signs access and refresh tokens; use a long random value outside development (`openssl rand -hex 32`). Changing it logs everyone out. | a dev-only value |
+| `WEBHOOK_SECRET` | API | Derives each Android phone's webhook signing key (`app.cli webhook-info` prints it); use a long random value outside development. Changing it means re-entering the key in every phone. | a dev-only value |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `DEFAULT_PHONE_REGION` | API | Optional: token lifetimes and the region used to read phone numbers typed without a country code | `900`, `604800`, `PH` |
 | `WORKER_API_URL`, `WORKER_NAME`, `WORKER_SECRET` | Worker | Where the worker finds the API, and the worker account it signs in with (see [Worker](#worker)). Compose also uses `WORKER_NAME` and `WORKER_SECRET` to create the account. Set a long random secret outside development. | `http://127.0.0.1:8000`, none, none (compose: `local` and a dev-only secret) |
 | `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | Worker | Optional: idle wait between cycles (also how often it asks the API for its devices), sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched whenever the API answered, for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
@@ -227,6 +228,23 @@ Behaviour to know:
 - The API leases each claimed message to the worker for `WORKER_LEASE_SECONDS` (the worker extends the lease while it retries). If the worker stops responding, or opens a new session after a restart, its messages are marked `failed` with "delivery unknown" (they may already have gone out; re-sending could duplicate them). If the worker sent a message but could not tell the API, the same happens when the lease runs out.
 - Received SMS are removed from the device only after the API has stored them, and a repeat of the same one is stored once. A sender that is not a phone number (such as an alphanumeric name) cannot be stored and is dropped with a warning in the log.
 - Device status (`online`, `offline`, `error`) and the latest error are kept in `gsm_device`.
+
+## Android phones (SMS Gateway app)
+
+An Android phone running [SMS Gateway for Android](https://github.com/capcom6/android-sms-gateway) is a device with `provider = android`. Two things connect it: the worker **sends** by calling the phone, and the phone **tells the API** what it received and whether messages were delivered, by webhook. (The phone provider itself is added to the worker in a later step; the webhook side works now.)
+
+1. Register the phone as an `android` device assigned to a worker: `register-device --name phone1 --serial-port - --phone "+639170000000" --provider android --worker lab-pc --config '{"base_url": "http://192.168.1.50:8080"}'`. The config holds no secrets; the phone's own login stays in the worker's environment.
+2. Print what the phone needs: `docker compose exec api /opt/venv/bin/python -m app.cli webhook-info --name phone1 --base-url https://sms.example.com/api` (native: `pnpm --filter @comm-center/api exec -- uv run python -m app.cli webhook-info ...`). It prints the **webhook URL** and the **signing key** for this phone.
+3. In the app, set the signing key (Settings, Webhooks) and register webhooks to that URL for `sms:received`, `sms:delivered` and `sms:failed` (`sms:sent` is optional and ignored).
+
+**The webhook URL must be https.** The app refuses plain http except to localhost, and the phone must be able to reach the address, which is the API as seen from the phone, so use the public name of whatever fronts it (an https reverse proxy, or a Cloudflare tunnel). The API is reached through the web container's `/api/` path, so the URL is `https://<host>/api/devices/<id>/webhook`.
+
+**Expose only the webhook path.** A tunnel that points at the whole web container publishes the sign-in page and the entire API to the internet. Restrict it to the one path the phone needs. With a Cloudflare tunnel, give the hostname an ingress rule with `path: ^/api/devices/[0-9]+/webhook$` and end the rules with `service: http_status:404`; with a reverse proxy, allow only that path and `POST`. Every webhook request is signed with the device's own key and refused outside a five-minute window, so a leaked URL alone does nothing, but the path restriction keeps the rest of the application off the internet.
+
+How the API treats webhooks:
+- **Received** (`sms:received`): stored through the same path as any inbound SMS. The webhook answers 200 only after the commit; the app retries anything else for days. Each event is stored once (by the event id), so a retry creates no duplicate. A sender that is not a phone number is acknowledged and dropped.
+- **Delivery** (`sms:delivered`, `sms:failed`): matched to our message by the id we give the gateway (`cc-<message id>`), and applied only to a message of that same phone that is `sending` or `sent`. `delivered` and `failed` are final. A `sent` report from the worker never overwrites one the phone already made. Events for ids that are not ours are acknowledged and ignored.
+- **Errors:** a bad or stale signature, an unknown device and a device that is not `android` all get the same 401. A signed body that is not a valid event gets 400. Everything else (pings, MMS, batches) gets 200 and is ignored.
 
 ## Troubleshooting
 

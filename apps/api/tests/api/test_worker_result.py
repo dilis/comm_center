@@ -144,3 +144,22 @@ def test_the_requests_need_a_worker_token(client, held):
 
 
 __all__ = ["register_device"]
+
+
+def test_a_sent_report_does_not_undo_a_delivery_that_already_arrived(client, db, held):
+    """The phone's delivered webhook can beat the worker's own report."""
+    headers, _, mid = held
+    db.execute(text("UPDATE messages SET status='delivered' WHERE id=:i"), {"i": mid})
+    assert result(client, headers, mid, status="sent").status_code == 204
+    assert message_row(db, mid).status == "delivered"
+    assert lease_row(db, mid) is None  # the lease is still released
+
+
+def test_a_sent_report_does_not_undo_a_failure_the_phone_already_reported(client, db, held):
+    headers, _, mid = held
+    db.execute(
+        text("UPDATE messages SET status='failed', error_message='no SIM' WHERE id=:i"), {"i": mid}
+    )
+    result(client, headers, mid, status="sent")
+    row = message_row(db, mid)
+    assert (row.status, row.error_message) == ("failed", "no SIM")

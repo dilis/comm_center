@@ -1,5 +1,5 @@
-"""Admin commands: ``create-admin``, ``create-worker``, ``ensure-worker``, ``register-device`` and
-``assign-device``
+"""Admin commands: ``create-admin``, ``create-worker``, ``ensure-worker``, ``register-device``,
+``assign-device`` and ``webhook-info``
 (``python -m app.cli --help``)."""
 
 import argparse
@@ -8,9 +8,13 @@ import json
 import os
 import sys
 
+from sqlalchemy import select
+
+from app import webhooks
 from app.bootstrap import BootstrapError, create_admin
 from app.db import SessionLocal
 from app.devices import PROVIDERS, DeviceError, assign_device, ensure_fake_device, register_device
+from app.models import GsmDevice
 from app.worker_accounts import WorkerError, create_worker, ensure_worker
 
 
@@ -47,6 +51,15 @@ def main(argv: list[str] | None = None) -> int:
     assign.add_argument("--worker", required=True, help="the worker account that will serve it")
     assign.add_argument("--provider", choices=PROVIDERS, help="change the provider too")
     assign.add_argument("--config", help="replace the config with this JSON object")
+    hook = sub.add_parser(
+        "webhook-info", help="print the webhook URL and signing key for an Android device"
+    )
+    hook.add_argument("--name", required=True, help="the device's name")
+    hook.add_argument(
+        "--base-url",
+        required=True,
+        help="the public https address of the API as the phone reaches it, e.g. https://sms.example.com/api",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "create-worker":
@@ -75,6 +88,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{'created' if created else 'updated'} worker '{ensured.name}' (id {ensured.id})")
         if fake:
             print(f"registered fake device '{fake.name}' for it")
+        return 0
+
+    if args.command == "webhook-info":
+        with SessionLocal() as db:
+            device = db.scalars(select(GsmDevice).where(GsmDevice.name == args.name)).first()
+            if device is None:
+                print(f"error: unknown device {args.name!r}", file=sys.stderr)
+                return 1
+            if device.provider != "android":
+                print(
+                    f"error: {args.name!r} is a {device.provider} device, not android",
+                    file=sys.stderr,
+                )
+                return 1
+            device_id = device.id
+        url = f"{args.base_url.rstrip('/')}/devices/{device_id}/webhook"
+        print(f"Webhook URL (must be https, or the phone refuses it):\n  {url}")
+        print(
+            f"Signing key (Settings > Webhooks > Signing Key in the app):\n  {webhooks.device_key(device_id)}"
+        )
+        print("Register a webhook to that URL for each of these events in the app:")
+        print("  sms:received   (messages the phone receives)")
+        print("  sms:delivered  (delivery reports)")
+        print("  sms:failed     (messages the carrier could not deliver)")
         return 0
 
     if args.command == "assign-device":

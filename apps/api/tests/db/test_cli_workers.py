@@ -87,3 +87,34 @@ def test_assign_device_from_the_command_line(cli_db, capsys):
         assert db.query(GsmDevice).filter_by(name="old").one().worker_id is not None
     assert cli.main(["assign-device", "--name", "nope", "--worker", "lab-pc"]) == 1
     assert "device" in capsys.readouterr().err
+
+
+def test_webhook_info_prints_the_url_and_the_devices_key(cli_db, capsys):
+    from app import webhooks
+
+    cli.main(["create-worker", "--name", "lab-pc"])
+    cli.main([
+        "register-device", "--name", "phone1", "--serial-port", "-", "--phone", "+639170000001",
+        "--provider", "android", "--worker", "lab-pc",
+    ])  # fmt: skip
+    capsys.readouterr()
+    assert (
+        cli.main(["webhook-info", "--name", "phone1", "--base-url", "https://sms.example.com/api"])
+        == 0
+    )
+    out = capsys.readouterr().out
+    with cli_db() as db:
+        device = db.query(GsmDevice).filter_by(name="phone1").one()
+    assert f"https://sms.example.com/api/devices/{device.id}/webhook" in out
+    assert webhooks.device_key(device.id) in out
+    assert "sms:received" in out and "sms:delivered" in out and "sms:failed" in out
+
+
+def test_webhook_info_needs_an_android_device(cli_db, capsys):
+    cli.main(
+        ["register-device", "--name", "plain", "--serial-port", "-", "--phone", "+639170000001"]
+    )
+    capsys.readouterr()
+    assert cli.main(["webhook-info", "--name", "plain", "--base-url", "https://x"]) == 1
+    assert "android" in capsys.readouterr().err
+    assert cli.main(["webhook-info", "--name", "nope", "--base-url", "https://x"]) == 1

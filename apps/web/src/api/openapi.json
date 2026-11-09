@@ -2379,6 +2379,51 @@
         ]
       }
     },
+    "/devices/{device_id}/webhook": {
+      "post": {
+        "description": "An event from the phone. Answers 200 only after the work is committed, because the app\nkeeps retrying anything else for days.",
+        "operationId": "webhook_devices__device_id__webhook_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Webhook Devices  Device Id  Webhook Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/groups": {
       "get": {
         "operationId": "list_groups_groups_get",
