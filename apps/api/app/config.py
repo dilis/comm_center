@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     access_token_ttl_seconds: int = 15 * 60
     refresh_token_ttl_seconds: int = 7 * 24 * 60 * 60
+    # Workers sign in again when this runs out (they have no refresh token).
+    worker_token_ttl_seconds: int = 15 * 60
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR or CRITICAL (API and worker)
     # Login rate limiting: this many failures for one username (or LOGIN_MAX_FAILURES_PER_IP
     # for one client address) within the lockout window block further attempts until the oldest

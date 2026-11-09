@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.bootstrap import SYSTEM_USER_ID
-from app.models import Contact, GsmDevice, User
+from app.models import Contact, GsmDevice, User, WorkerAccount
 from app.phones import normalize_e164
 
 
@@ -13,9 +13,31 @@ class DeviceError(Exception):
     pass
 
 
-def register_device(db: Session, name: str, serial_port: str, phone_number: str) -> GsmDevice:
+PROVIDERS = ("fake", "android", "gsm_modem")
+
+
+def register_device(
+    db: Session,
+    name: str,
+    serial_port: str,
+    phone_number: str,
+    *,
+    provider: str = "fake",
+    config: dict | None = None,
+    worker: str | None = None,
+) -> GsmDevice:
     """Create ``gsm-<name>`` (an inbound system agent that owns what the device receives) and the
-    device itself, both owned by ``system``. Commits; raises ``DeviceError`` on bad input."""
+    device itself, both owned by ``system``. ``worker`` is the name of the worker account that
+    serves it. Commits; raises ``DeviceError`` on bad input."""
+    if provider not in PROVIDERS:
+        raise DeviceError(f"unknown provider {provider!r} (one of {', '.join(PROVIDERS)})")
+    worker_id = None
+    if worker is not None:
+        worker_id = db.scalars(
+            select(WorkerAccount.id).where(WorkerAccount.name == worker)
+        ).one_or_none()
+        if worker_id is None:
+            raise DeviceError(f"unknown worker {worker!r}")
     try:
         number = normalize_e164(phone_number)
     except ValueError:
@@ -41,6 +63,9 @@ def register_device(db: Session, name: str, serial_port: str, phone_number: str)
             name=name,
             serial_port=serial_port,
             phone_number=number,
+            provider=provider,
+            config=config or {},
+            worker_id=worker_id,
             agent_user_id=agent.id,
             owner_id=SYSTEM_USER_ID,
         )

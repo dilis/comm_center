@@ -1105,6 +1105,93 @@
         "title": "SendRequest",
         "type": "object"
       },
+      "SessionDevice": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone_number": {
+            "title": "Phone Number",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "phone_number",
+          "config"
+        ],
+        "title": "SessionDevice",
+        "type": "object"
+      },
+      "SessionOut": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/SessionDevice"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "worker_id",
+          "protocol_version",
+          "devices"
+        ],
+        "title": "SessionOut",
+        "type": "object"
+      },
+      "SessionRequest": {
+        "properties": {
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "version": {
+            "maxLength": 64,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "protocol_version",
+          "providers"
+        ],
+        "title": "SessionRequest",
+        "type": "object"
+      },
       "Skipped": {
         "properties": {
           "contact_id": {
@@ -1406,6 +1493,47 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkerToken": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "WorkerToken",
+        "type": "object"
+      },
+      "WorkerTokenRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "secret"
+        ],
+        "title": "WorkerTokenRequest",
         "type": "object"
       }
     },
@@ -3169,6 +3297,94 @@
         "summary": "Unlock User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/worker/session": {
+      "post": {
+        "description": "The handshake and heartbeat: records what the worker is, and tells it which devices to run.",
+        "operationId": "session_worker_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Session",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/token": {
+      "post": {
+        "operationId": "token_worker_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Token",
+        "tags": [
+          "worker"
         ]
       }
     }

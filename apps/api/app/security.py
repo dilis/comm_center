@@ -12,7 +12,7 @@ from app.config import settings
 
 MIN_PASSWORD_LENGTH = 10
 ALGORITHM = "HS256"
-TokenKind = Literal["access", "refresh"]
+TokenKind = Literal["access", "refresh", "worker"]
 
 _hasher = PasswordHasher()
 # Verified against when a username does not exist, so login timing does not reveal valid names.

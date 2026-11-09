@@ -467,6 +467,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/worker/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Session
+         * @description The handshake and heartbeat: records what the worker is, and tells it which devices to run.
+         */
+        post: operations["session_worker_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worker/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Token */
+        post: operations["token_worker_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -850,6 +887,39 @@ export interface components {
             /** Phone */
             phone?: string | null;
         };
+        /** SessionDevice */
+        SessionDevice: {
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Phone Number */
+            phone_number: string;
+            /** Provider */
+            provider: string;
+        };
+        /** SessionOut */
+        SessionOut: {
+            /** Devices */
+            devices: components["schemas"]["SessionDevice"][];
+            /** Protocol Version */
+            protocol_version: number;
+            /** Worker Id */
+            worker_id: number;
+        };
+        /** SessionRequest */
+        SessionRequest: {
+            /** Protocol Version */
+            protocol_version: number;
+            /** Providers */
+            providers: string[];
+            /** Version */
+            version: string;
+        };
         /** Skipped */
         Skipped: {
             /** Contact Id */
@@ -952,6 +1022,25 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WorkerToken */
+        WorkerToken: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type?: string;
+        };
+        /** WorkerTokenRequest */
+        WorkerTokenRequest: {
+            /** Name */
+            name: string;
+            /** Secret */
+            secret: string;
         };
     };
     responses: never;
@@ -1914,6 +2003,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_worker_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_worker_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkerTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerToken"];
+                };
             };
             /** @description Validation Error */
             422: {
