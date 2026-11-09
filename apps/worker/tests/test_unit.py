@@ -97,3 +97,11 @@ def test_fake_inbox_refs_are_unique_across_restarts(tmp_path):
     with inbox.open("a") as f:
         f.write(json.dumps({"from": "0917 123 4567", "text": "two"}) + "\n")
     assert len({s.ref for s in one.poll_inbound()}) == 2  # and within one run
+
+
+def test_the_fake_provider_accepts_the_message_id_and_remembers_it():
+    fake = FakeProvider()
+    fake.send("+639171234567", "hi", message_id=9)
+    fake.send("+639171234567", "again")  # the id is optional
+    assert fake.sent == [("+639171234567", "hi"), ("+639171234567", "again")]
+    assert fake.sent_ids == [9, None]

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     worker_max_attempts: int = 3  # sends per message before it is reported failed
     worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
     worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched when the API answers
+    worker_android_timeout_seconds: float = 15.0  # how long to wait for an Android phone to answer
     # The fake provider imitates a modem: each send takes this long (plus up to the jitter).
     worker_fake_send_delay_seconds: float = 2.0
     worker_fake_send_jitter_seconds: float = 1.0

@@ -7,12 +7,14 @@ in its own thread. It never touches the database. It stops cleanly on SIGINT or 
 
 import argparse
 import logging
+import os
 import signal
 import threading
 from pathlib import Path
 
 import httpx
 
+from comm_center_worker.android import from_device
 from comm_center_worker.client import ApiClient
 from comm_center_worker.config import settings
 from comm_center_worker.fake import FakeProvider
@@ -25,7 +27,7 @@ from comm_center_worker.supervisor import Supervisor
 log = logging.getLogger("comm_center_worker")
 
 # Provider types this worker can run. The API decides which device uses which.
-SUPPORTED_PROVIDERS = ["fake"]
+SUPPORTED_PROVIDERS = ["fake", "android"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
                 send_jitter=settings.worker_fake_send_jitter_seconds,
                 sleep=lambda seconds: stop.wait(seconds),  # a shutdown interrupts a pending send
             )
+        if device["provider"] == "android":
+            return from_device(device, os.environ, timeout=settings.worker_android_timeout_seconds)
         raise ValueError(f"this worker cannot run provider {device['provider']!r}")
 
     def make_worker(device: dict) -> DeviceWorker:

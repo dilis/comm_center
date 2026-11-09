@@ -309,3 +309,28 @@ def test_it_beats_only_while_the_api_answers(server, supervisor):
     sup.sync = counted
     sup.run(lambda: beats.append(1))
     assert len(calls) == 3 and len(beats) == 1
+
+
+def test_the_providers_get_the_id_of_the_message_they_send(server, api, sleeps):
+    server.queue += [message(11), message(12)]
+    provider = FakeProvider()
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    assert provider.sent_ids == [11, 12]
+
+
+def test_a_retry_sends_the_same_message_id_again(server, api, sleeps):
+    server.queue.append(message(21))
+    provider = FakeProvider()
+    provider.send_errors.append(ProviderError("busy"))
+    ids = []
+    provider.on_send = lambda phone, content: None
+    original = provider.send
+
+    def spy(phone, content, message_id=None):
+        ids.append(message_id)
+        return original(phone, content, message_id)
+
+    provider.send = spy
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    assert ids == [21, 21]

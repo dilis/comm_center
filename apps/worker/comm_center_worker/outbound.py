@@ -75,7 +75,7 @@ def send_one(
     try:
         for attempt in range(1, policy.max_attempts + 1):
             try:
-                provider.send(claimed.phone_number, claimed.content)
+                provider.send(claimed.phone_number, claimed.content, claimed.id)
             except PermanentSendError as exc:
                 report_result(api, claimed.id, "failed", str(exc), policy, sleep)
                 log.warning("message %s rejected: %s", claimed.id, exc)
