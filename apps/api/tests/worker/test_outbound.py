@@ -1,11 +1,11 @@
 import threading
 
 import pytest
+from comm_center_worker.client import ApiClient, ApiUnavailable
+from comm_center_worker.outbound import RetryPolicy, send_one
+from comm_center_worker.provider import PermanentSendError, ProviderError
 from sqlalchemy import text
 
-from app.worker.client import ApiClient, ApiUnavailable
-from app.worker.outbound import RetryPolicy, send_one
-from app.worker.provider import PermanentSendError, ProviderError
 from tests.worker.conftest import queue, row
 
 POLICY = RetryPolicy(max_attempts=3, backoff_base=2.0)
@@ -181,7 +181,7 @@ def test_a_result_that_cannot_be_reported_is_retried_then_left_to_the_lease(
 def test_concurrent_workers_never_send_the_same_message_twice(
     session_factory, commit, ana, make_api, device, sleep
 ):
-    from app.worker.fake import FakeProvider
+    from comm_center_worker.fake import FakeProvider
 
     ids = [queue(commit, ana, f"m{i}") for i in range(30)]
     providers = [FakeProvider(), FakeProvider()]

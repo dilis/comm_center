@@ -1,4 +1,4 @@
-"""The worker process: ``python -m app.worker``.
+"""The worker process: ``python -m comm_center_worker``.
 
 A process of its own that holds the devices (serial ports, phones). It signs in to the API as a
 worker account, learns from it which devices are assigned to it and runs one loop per device, each
@@ -13,23 +13,23 @@ from pathlib import Path
 
 import httpx
 
-from app.config import settings
-from app.logging_config import configure_logging
-from app.worker.client import ApiClient
-from app.worker.fake import FakeProvider
-from app.worker.outbound import RetryPolicy
-from app.worker.provider import ChannelProvider
-from app.worker.runner import DeviceWorker
-from app.worker.supervisor import Supervisor
+from comm_center_worker.client import ApiClient
+from comm_center_worker.config import settings
+from comm_center_worker.fake import FakeProvider
+from comm_center_worker.logging_config import configure_logging
+from comm_center_worker.outbound import RetryPolicy
+from comm_center_worker.provider import ChannelProvider
+from comm_center_worker.runner import DeviceWorker
+from comm_center_worker.supervisor import Supervisor
 
-log = logging.getLogger("app.worker")
+log = logging.getLogger("comm_center_worker")
 
 # Provider types this worker can run. The API decides which device uses which.
 SUPPORTED_PROVIDERS = ["fake"]
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="app.worker")
+    parser = argparse.ArgumentParser(prog="comm_center_worker")
     parser.add_argument(
         "--fake-inbox", type=Path, help="fake provider: JSON-lines file of inbound SMS"
     )

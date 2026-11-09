@@ -5,14 +5,14 @@ from datetime import datetime
 import httpx
 import pytest
 
-from app.worker.client import (
+from comm_center_worker.client import (
     ApiClient,
     ApiConflict,
     ApiError,
     ApiUnavailable,
     ClaimedMessage,
 )
-from app.worker.provider import InboundSms
+from comm_center_worker.provider import InboundSms
 
 
 class FakeApi:

@@ -14,19 +14,20 @@ dependencies = [
   "argon2-cffi>=25.1.0",
   "phonenumbers>=9.0.42",
   "email-validator>=2.3.0",
-  "httpx>=0.27",  # the worker calls the API with it
 ]
 
 [dependency-groups]
 dev = [
   "pytest>=8",
+  "httpx>=0.27",
   "ruff>=0.6",
   "openpyxl>=3.1.5",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+# ../worker: the integration tests in tests/worker run the real worker code against the real API.
+pythonpath = [".", "../worker"]
 markers = ["db: needs a running MySQL (integration test)"]
 
 [tool.ruff]

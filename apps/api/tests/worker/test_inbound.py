@@ -1,12 +1,11 @@
 from datetime import datetime
 
 import pytest
+from comm_center_worker.client import ApiError, ApiUnavailable
+from comm_center_worker.fake import FakeProvider
+from comm_center_worker.inbound import process_inbound
+from comm_center_worker.provider import InboundSms
 from sqlalchemy import text
-
-from app.worker.client import ApiError, ApiUnavailable
-from app.worker.fake import FakeProvider
-from app.worker.inbound import process_inbound
-from app.worker.provider import InboundSms
 
 
 def sms(sender="+639171234567", content="hi", ref="1"):

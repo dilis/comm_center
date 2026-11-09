@@ -1,0 +1,23 @@
+[project]
+name = "comm-center-worker"
+version = "0.1.0"
+description = "Runs SMS devices for Comm Center. Talks to the API over HTTP only: no database access."
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.27",
+  "pydantic-settings>=2.4",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+  "jsonschema>=4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100

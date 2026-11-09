@@ -3,8 +3,8 @@ API has stored it."""
 
 import logging
 
-from app.worker.client import ApiClient, ApiUnavailable
-from app.worker.provider import ChannelProvider
+from comm_center_worker.client import ApiClient, ApiUnavailable
+from comm_center_worker.provider import ChannelProvider
 
 log = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from app.worker.fake import FakeProvider
-from app.worker.outbound import RetryPolicy
-from app.worker.provider import PermanentSendError, ProviderError
+from comm_center_worker.fake import FakeProvider
+from comm_center_worker.outbound import RetryPolicy
+from comm_center_worker.provider import PermanentSendError, ProviderError
 
 
 def test_backoff_doubles_each_attempt():
@@ -43,8 +43,8 @@ def test_fake_provider_inbox_file_is_read_incrementally(tmp_path):
 
 
 def test_the_worker_needs_a_name_and_secret_to_start(capsys, monkeypatch):
-    from app.config import settings
-    from app.worker.__main__ import main
+    from comm_center_worker.__main__ import main
+    from comm_center_worker.config import settings
 
     monkeypatch.setattr(settings, "worker_name", "")
     monkeypatch.setattr(settings, "worker_secret", "")

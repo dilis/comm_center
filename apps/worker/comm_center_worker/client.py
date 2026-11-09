@@ -13,7 +13,7 @@ from datetime import UTC
 
 import httpx
 
-from app.worker.provider import InboundSms
+from comm_center_worker.provider import InboundSms
 
 log = logging.getLogger(__name__)
 TOKEN_MARGIN_SECONDS = 30  # sign in again this long before the token runs out

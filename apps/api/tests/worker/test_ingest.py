@@ -1,10 +1,10 @@
 from datetime import datetime
 
+from comm_center_worker.provider import InboundSms
 from sqlalchemy import text
 
 from app import inbound as shared
 from app.inbound import ingest_message
-from app.worker.provider import InboundSms
 from tests.db.helpers import make_contact, make_phone
 
 

@@ -1,0 +1,10 @@
+{
+  "name": "@comm-center/worker",
+  "private": true,
+  "scripts": {
+    "start": "uv run python -m comm_center_worker",
+    "lint": "uv run ruff check .",
+    "test": "uv run pytest",
+    "test:unit": "uv run pytest"
+  }
+}

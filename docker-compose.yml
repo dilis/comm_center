@@ -68,8 +68,8 @@ services:
   # passed through (`devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]`) once the hardware is available.
   worker:
     profiles: ["app", "worker"]
-    build: ./apps/api
-    command: ["/opt/venv/bin/python", "-m", "app.worker", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
+    build: ./apps/worker  # its own image: no database driver, no API code
+    command: ["/opt/venv/bin/python", "-m", "comm_center_worker", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
     environment:
       WORKER_API_URL: ${WORKER_API_URL:-http://api:8000}
       WORKER_NAME: ${WORKER_NAME:-local}

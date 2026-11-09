@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.worker.provider import InboundSms, ProviderError
+from comm_center_worker.provider import InboundSms, ProviderError
 
 log = logging.getLogger(__name__)
 

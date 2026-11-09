@@ -3,6 +3,8 @@ sessions that must see each other's rows), so they clean up after themselves ins
 rolled-back transaction. The worker talks to the real app through FastAPI's test client."""
 
 import pytest
+from comm_center_worker.client import ApiClient
+from comm_center_worker.fake import FakeProvider
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
@@ -10,8 +12,6 @@ from sqlalchemy.orm import sessionmaker
 from app.db import get_db
 from app.devices import register_device
 from app.main import app
-from app.worker.client import ApiClient
-from app.worker.fake import FakeProvider
 from app.worker_accounts import create_worker
 from tests.db.conftest import engine, test_db_url  # noqa: F401 - fixtures
 from tests.db.helpers import insert, make_contact, make_phone

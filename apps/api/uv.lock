@@ -228,7 +228,6 @@ dependencies = [
     { name = "cryptography" },
     { name = "email-validator" },
     { name = "fastapi" },
-    { name = "httpx" },
     { name = "phonenumbers" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
@@ -239,6 +238,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx" },
     { name = "openpyxl" },
     { name = "pytest" },
     { name = "ruff" },
@@ -251,7 +251,6 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx", specifier = ">=0.27" },
     { name = "phonenumbers", specifier = ">=9.0.42" },
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pyjwt", specifier = ">=2.15.1" },
@@ -262,6 +261,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },

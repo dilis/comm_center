@@ -31,22 +31,11 @@ class Settings(BaseSettings):
     # Region used to read phone numbers typed without a country code.
     default_phone_region: str = "PH"
 
-    # GSM worker (a separate process, see docs/DEPLOYMENT.md).
-    # How the worker reaches the API and signs in (a worker account, see `create-worker`).
-    worker_api_url: str = "http://127.0.0.1:8000"
-    worker_name: str = ""
-    worker_secret: str = ""
-    worker_poll_interval_seconds: float = 2.0  # idle wait between cycles
-    worker_max_attempts: int = 3  # sends per message before it is marked failed
-    worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
+    # What the API tells workers (the worker program has its own settings, see docs/DEPLOYMENT.md).
     # A worker that claims a message holds it for this long (it can extend); past that the message
     # is failed, never re-sent. Claim requests may wait up to the long-poll time for a message.
     worker_lease_seconds: int = 120
     worker_long_poll_seconds: int = 20
-    # The fake provider imitates a modem: each send takes this long (plus up to the jitter).
-    worker_fake_send_delay_seconds: float = 2.0
-    worker_fake_send_jitter_seconds: float = 1.0
-    worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched every cycle
 
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
 

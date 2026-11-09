@@ -2,14 +2,14 @@ import threading
 import time
 
 import pytest
+from comm_center_worker.client import ApiUnavailable
+from comm_center_worker.fake import FakeProvider
+from comm_center_worker.outbound import RetryPolicy
+from comm_center_worker.runner import DeviceWorker
+from comm_center_worker.supervisor import Supervisor
 from sqlalchemy import text
 
 from app.devices import ensure_fake_device, register_device
-from app.worker.client import ApiUnavailable
-from app.worker.fake import FakeProvider
-from app.worker.outbound import RetryPolicy
-from app.worker.runner import DeviceWorker
-from app.worker.supervisor import Supervisor
 from tests.db.helpers import insert
 from tests.worker.conftest import queue, row
 

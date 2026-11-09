@@ -3,12 +3,12 @@ import time
 from datetime import datetime
 
 import pytest
+from comm_center_worker.client import ApiUnavailable
+from comm_center_worker.outbound import RetryPolicy
+from comm_center_worker.provider import InboundSms, ProviderError
+from comm_center_worker.runner import DeviceWorker
 from sqlalchemy import text
 
-from app.worker.client import ApiUnavailable
-from app.worker.outbound import RetryPolicy
-from app.worker.provider import InboundSms, ProviderError
-from app.worker.runner import DeviceWorker
 from tests.worker.conftest import queue, row
 
 POLICY = RetryPolicy(max_attempts=3, backoff_base=0.0)
@@ -99,7 +99,7 @@ def test_messages_are_sent_one_at_a_time_each_spending_its_send_time_in_sending(
 ):
     """Like a real modem: while one message is being sent the next ones still wait in the queue,
     and the finished ones are already sent. Never all at once."""
-    from app.worker.fake import FakeProvider
+    from comm_center_worker.fake import FakeProvider
 
     ids = [queue(commit, ana, f"m{i}") for i in range(3)]
     seen = []

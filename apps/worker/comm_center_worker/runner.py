@@ -5,10 +5,10 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.worker.client import ApiClient, ApiUnavailable
-from app.worker.inbound import process_inbound
-from app.worker.outbound import RetryPolicy, report_device_error, send_one
-from app.worker.provider import ChannelProvider, ProviderError
+from comm_center_worker.client import ApiClient, ApiUnavailable
+from comm_center_worker.inbound import process_inbound
+from comm_center_worker.outbound import RetryPolicy, report_device_error, send_one
+from comm_center_worker.provider import ChannelProvider, ProviderError
 
 log = logging.getLogger(__name__)
 

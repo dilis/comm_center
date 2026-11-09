@@ -5,9 +5,9 @@ import threading
 import uuid
 from collections.abc import Callable
 
-from app.worker.client import ApiClient
-from app.worker.protocol import PROTOCOL_VERSION, WORKER_VERSION
-from app.worker.runner import DeviceWorker
+from comm_center_worker.client import ApiClient
+from comm_center_worker.protocol import PROTOCOL_VERSION, WORKER_VERSION
+from comm_center_worker.runner import DeviceWorker
 
 log = logging.getLogger(__name__)
 

@@ -5,8 +5,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.worker.client import ApiClient, ApiConflict, ApiUnavailable
-from app.worker.provider import ChannelProvider, PermanentSendError, ProviderError
+from comm_center_worker.client import ApiClient, ApiConflict, ApiUnavailable
+from comm_center_worker.provider import ChannelProvider, PermanentSendError, ProviderError
 
 log = logging.getLogger(__name__)
 REPORT_ATTEMPTS = 3  # tries to deliver a result to the API before giving up
