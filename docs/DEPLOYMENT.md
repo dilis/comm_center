@@ -8,7 +8,7 @@ Three ways to run Comm Center. Run the commands from the repo root. Each mode wa
 | [2. Separate processes](#2-separate-processes) | Development, or a host that runs processes directly | container or native install | native processes |
 | [3. Docker Compose](#3-docker-compose) | The simplest full deployment | container | containers |
 
-> **Current scope:** the API serves `/health`, authentication, users, contacts, groups and messages, and there is a GSM worker (fake provider only until a modem is attached). The web app (sign-in, Messages, Contacts, Users) talks to the API only through its own `/api` path, so the browser needs no CORS and only the web port has to be reachable by users. A fresh deployment has the schema and seed data but no human user: create the first admin as described below.
+> **Current scope:** the API serves `/health`, authentication, users, contacts, groups and messages, plus the API a worker uses, and there is a worker (fake provider only until a modem or phone provider is added). The web app (sign-in, Messages, Contacts, Users) talks to the API only through its own `/api` path, so the browser needs no CORS and only the web port has to be reachable by users. A fresh deployment has the schema and seed data but no human user: create the first admin as described below.
 
 ## Environment variables
 
@@ -22,15 +22,19 @@ The same few variables drive every mode.
 | `MYSQL_PASSWORD` | MySQL container | Application user's password | `comm_center` |
 | `DATABASE_URL` | API | SQLAlchemy URL, `mysql+pymysql://USER:PASSWORD@HOST:PORT/DATABASE` | the dev values on `127.0.0.1:3307` |
 | `JWT_SECRET` | API | Signs access and refresh tokens; use a long random value outside development (`openssl rand -hex 32`). Changing it logs everyone out. | a dev-only value |
+| `WEBHOOK_SECRET` | API | Derives each Android phone's webhook signing key (`app.cli webhook-info` prints it); use a long random value outside development. Changing it means re-entering the key in every phone. | a dev-only value |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `DEFAULT_PHONE_REGION` | API | Optional: token lifetimes and the region used to read phone numbers typed without a country code | `900`, `604800`, `PH` |
-| `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | GSM worker | Optional: idle wait between cycles, sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched every cycle for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
-| `LOG_LEVEL` | API, GSM worker | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` | `INFO` |
+| `WORKER_API_URL`, `WORKER_NAME`, `WORKER_SECRET` | Worker | Where the worker finds the API, and the worker account it signs in with (see [Worker](#worker)). Compose also uses `WORKER_NAME` and `WORKER_SECRET` to create the account. Set a long random secret outside development. | `http://127.0.0.1:8000`, none, none (compose: `local` and a dev-only secret) |
+| `WORKER_ANDROID_TIMEOUT_SECONDS` | Worker | How long to wait for an Android phone to answer a request | `15` |
+| `WORKER_POLL_INTERVAL_SECONDS`, `WORKER_MAX_ATTEMPTS`, `WORKER_BACKOFF_BASE_SECONDS`, `WORKER_HEARTBEAT_FILE` | Worker | Optional: idle wait between cycles (also how often it asks the API for its devices), sends per message before it is marked `failed`, wait before the second attempt (doubles each retry), and the file touched whenever the API answered, for healthchecks | `2`, `3`, `2`, `/tmp/comm-center-worker.heartbeat` |
+| `WORKER_LEASE_SECONDS`, `WORKER_LONG_POLL_SECONDS`, `WORKER_TOKEN_TTL_SECONDS` | API | Optional: how long a worker may hold a claimed message before the API fails it, the longest a claim request waits for a message, and the lifetime of a worker's token | `120`, `20`, `900` |
+| `LOG_LEVEL` | API, worker | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` | `INFO` |
 | `LOGIN_MAX_FAILURES`, `LOGIN_MAX_FAILURES_PER_IP`, `LOGIN_LOCKOUT_SECONDS` | API | Login rate limiting: failed sign-ins allowed for one username, and for one client address, within the window; the window (and so the longest lockout) in seconds | `5`, `20`, `900` |
 | `PASSWORD_MAX_FAILURES`, `REFRESH_MAX_FAILURES_PER_IP` | API | Same window: wrong current passwords allowed per user in `PUT /auth/me/password`, and invalid refresh tokens allowed per client address in `POST /auth/refresh` | `5`, `30` |
 | `FORWARDED_ALLOW_IPS` | API (uvicorn) | Proxy addresses whose `X-Forwarded-For` is believed; see [Login rate limiting](#login-rate-limiting) | `127.0.0.1` (compose sets `*`) |
 | `API_UPSTREAM` | Web container | `host:port` nginx forwards `/api/` to, as seen from the web container. Set with `-e` outside compose. | `api:8000` |
 | `API_PROXY_TARGET` | `pnpm dev`, `vite preview` | URL those two forward `/api` to | `http://127.0.0.1:8000` |
-| `WORKER_FAKE_SEND_DELAY_SECONDS`, `WORKER_FAKE_SEND_JITTER_SECONDS` | GSM worker (fake provider) | How long the fake modem takes to send each message: the delay plus up to the jitter, in seconds. `0` and `0` make sends instant. | `2`, `1` |
+| `WORKER_FAKE_SEND_DELAY_SECONDS`, `WORKER_FAKE_SEND_JITTER_SECONDS` | Worker (fake provider) | How long the fake modem takes to send each message: the delay plus up to the jitter, in seconds. `0` and `0` make sends instant. | `2`, `1` |
 | `DB_PORT`, `API_PORT`, `WEB_PORT` | Compose only | Host ports for the three services | `3307`, `8000`, `8080` |
 
 Rules:
@@ -207,21 +211,49 @@ Stop: `docker compose --profile app down` keeps the data. `docker compose --prof
 To run several copies side by side (for example a test copy), give each its own project name, env file and ports:
 `docker compose -p cc-test --env-file other.env --profile app up -d --wait`.
 
-## GSM worker
+## Worker
 
-The worker sends queued messages and stores received ones. It is a **separate process**, never part of the API, because it owns the modem's serial port: run exactly one worker per set of devices, and never under `--reload`. It uses MySQL as its queue, so it needs the same `DATABASE_URL` as the API and a migrated database.
+The worker owns the devices (serial ports, phones): it sends queued messages and hands over received ones. It is a **separate program** (`apps/worker`) with its own package, lockfile, tests and Docker image, and **no database access**: it does not contain the API's code or even a database driver, and the only thing it shares with the API is the contract file `apps/worker/contract/worker-api.json`. It reaches the API only over HTTP, signed in as a *worker account*, and the API tells it which devices are assigned to it. So the worker can run on the same host, on another machine on the phone's network, or remote from the API; it only needs to reach `WORKER_API_URL`. Run exactly one worker per set of devices, and never under `--reload`.
 
-- **Compose:** the worker is the `worker` service and starts with the rest of the stack (`pnpm docker:up`). It is healthy while its heartbeat file is fresh, and it waits (healthy) if no device is registered yet.
-- **Native:** `pnpm --filter @comm-center/api worker -- --provider fake`.
-- **Devices:** the worker watches for devices, so one registered later is picked up within a few seconds, with no restart. Register a modem (creates the device and its inbound agent `gsm-<name>`) with `pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyUSB0 --phone "+639170000000"` (in the API container: `docker compose exec api /opt/venv/bin/python -m app.cli register-device ...`).
+1. **Create the worker account** (prints its secret once; it cannot be shown again): `pnpm --filter @comm-center/api create-worker --name lab-pc`. In the API container: `docker compose exec api /opt/venv/bin/python -m app.cli create-worker --name lab-pc`.
+2. **Register a device and assign it** to that worker: `pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyUSB0 --phone "+639170000000" --provider fake --worker lab-pc` (`--provider` is `fake`, `android` or `gsm_modem`; `--config '{"…": "…"}'` holds non-secret settings). This also creates the device's inbound agent `gsm-<name>`.
+3. **Start the worker** with `WORKER_NAME`, `WORKER_SECRET` and `WORKER_API_URL` set: `pnpm --filter @comm-center/worker start` (from `apps/worker`; the worker is its own package with its own dependencies, so `cd apps/worker && uv sync` first). It asks the API for its devices every `WORKER_POLL_INTERVAL_SECONDS`, so a device assigned later is picked up with no restart, and one taken away is stopped.
 
-**Only the fake provider exists yet.** It logs sends instead of transmitting them (they are still marked `sent`), but it behaves like a modem in timing: messages are sent strictly one at a time, each staying `sending` for `WORKER_FAKE_SEND_DELAY_SECONDS` plus up to `WORKER_FAKE_SEND_JITTER_SECONDS` seconds (about 2 to 3 by default), so a batch to many contacts completes gradually. If no device is registered it adds one called `fake` so a fresh stack works out of the box. Do not run it where real messages matter. `--fake-inbox FILE` makes it deliver SMS from a JSON-lines file (`{"from": "+639171234567", "text": "hi"}` per line) for trying things out; the compose worker reads `/tmp/fake-inbox.jsonl`, so you can "receive" a message with `docker compose exec worker sh -c "echo '{\"from\": \"0917 123 4567\", \"text\": \"hello\"}' >> /tmp/fake-inbox.jsonl"`. It goes through the real inbound path: the sender's contact is found or created, and the message appears on the Received tab. The real modem provider arrives with the hardware; compose will then also need the serial device passed through (`devices:`).
+- **Compose:** `pnpm docker:up` runs a one-shot `worker-setup` service that creates the worker account `${WORKER_NAME:-local}` with `WORKER_SECRET` (and, if no device exists, a fake one for it), then starts the `worker`. The worker is healthy while the API keeps answering it; one that cannot reach the API reads as unhealthy. Changing `WORKER_SECRET` and restarting the stack updates the account.
+- **Image:** `docker build apps/worker` builds the worker alone (`docker compose` does it for the `worker` service). It needs only `WORKER_API_URL`, `WORKER_NAME` and `WORKER_SECRET`, so it can run on another machine than the API: copy nothing but the image and those three values.
+- **Contract:** after changing a worker endpoint in the API, run `pnpm --filter @comm-center/api gen:worker-contract` and commit `apps/worker/contract/worker-api.json`; the API's tests fail if it is stale, and the worker's tests fail if its client no longer matches it.
+- **Protocol version:** the worker states the protocol version it speaks; an API that speaks another one refuses it with a clear error, so upgrade both together (the worker logs the reason and keeps retrying).
+
+**Providers:** `fake` (below) and `android` (see [Android phones](#android-phones-sms-gateway-app)); a `gsm_modem` provider is not built yet. The **fake provider** logs sends instead of transmitting them (they are still marked `sent`), but it behaves like a modem in timing: messages are sent strictly one at a time, each staying `sending` for `WORKER_FAKE_SEND_DELAY_SECONDS` plus up to `WORKER_FAKE_SEND_JITTER_SECONDS` seconds (about 2 to 3 by default), so a batch to many contacts completes gradually. Do not run it where real messages matter. `--fake-inbox FILE` makes it deliver SMS from a JSON-lines file (`{"from": "+639171234567", "text": "hi"}` per line) for trying things out; the compose worker reads `/tmp/fake-inbox.jsonl`, so you can "receive" a message with `docker compose exec worker sh -c "echo '{\"from\": \"0917 123 4567\", \"text\": \"hello\"}' >> /tmp/fake-inbox.jsonl"`. It goes through the real inbound path: the sender's contact is found or created, and the message appears on the Received tab. A modem will also need its serial device passed through (`devices:`).
 
 Behaviour to know:
-- A message is attempted up to `WORKER_MAX_ATTEMPTS` times with doubling waits, then marked `failed` with the error. A number the modem rejects outright is failed at once.
-- If the worker dies mid-send, those messages are marked `failed` on the next start (they may already have gone out; re-sending could duplicate them).
-- Received SMS are removed from the modem only after they are stored. A sender that is not a phone number (such as an alphanumeric name) cannot be stored and is dropped with a warning in the log.
-- Device status (`online`, `offline`, `error`) is kept in `gsm_device.status`.
+- A message is attempted up to `WORKER_MAX_ATTEMPTS` times with doubling waits, then marked `failed` with the error. A number the device rejects outright is failed at once.
+- The API leases each claimed message to the worker for `WORKER_LEASE_SECONDS` (the worker extends the lease while it retries). If the worker stops responding, or opens a new session after a restart, its messages are marked `failed` with "delivery unknown" (they may already have gone out; re-sending could duplicate them). If the worker sent a message but could not tell the API, the same happens when the lease runs out.
+- Received SMS are removed from the device only after the API has stored them, and a repeat of the same one is stored once. A sender that is not a phone number (such as an alphanumeric name) cannot be stored and is dropped with a warning in the log.
+- Device status (`online`, `offline`, `error`) and the latest error are kept in `gsm_device`.
+
+## Android phones (SMS Gateway app)
+
+An Android phone running [SMS Gateway for Android](https://github.com/capcom6/android-sms-gateway) is a device with `provider = android`. Two things connect it: the worker **sends** by calling the phone, and the phone **tells the API** what it received and whether messages were delivered, by webhook.
+
+1. Register the phone as an `android` device assigned to a worker: `register-device --name phone1 --serial-port - --phone "+639170000000" --provider android --worker lab-pc --config '{"base_url": "http://192.168.1.50:8080", "username_ref": "PHONE1_USERNAME", "password_ref": "PHONE1_PASSWORD"}'`. In the app, start the Local Server (port 8080) and note the address and the login shown there. The config holds the phone's address and only the **names** of two environment variables; the API never sees the phone's login.
+   Give the worker those variables: `PHONE1_USERNAME` and `PHONE1_PASSWORD` set to the login from the app, in the environment of the worker process. In compose, add them under the worker's `environment:` in a `docker-compose.override.yml` (not in `.env`, which would reach every service). The worker must be able to reach the phone's address (same network; with the worker in a container, check that the container can route to the LAN). Keep the phone charged, on the network, with a SIM that has an SMS plan, and exempt from battery optimisation.
+2. Print what the phone needs: `docker compose exec api /opt/venv/bin/python -m app.cli webhook-info --name phone1 --base-url https://sms.example.com/api` (native: `pnpm --filter @comm-center/api exec -- uv run python -m app.cli webhook-info ...`). It prints the **webhook URL** and the **signing key** for this phone.
+3. In the app, set the signing key (Settings, Webhooks) and register webhooks to that URL for `sms:received`, `sms:delivered` and `sms:failed` (`sms:sent` is optional and ignored).
+
+**The webhook URL must be https.** The app refuses plain http except to localhost, and the phone must be able to reach the address, which is the API as seen from the phone, so use the public name of whatever fronts it (an https reverse proxy, or a Cloudflare tunnel). The API is reached through the web container's `/api/` path, so the URL is `https://<host>/api/devices/<id>/webhook`.
+
+**Expose only the webhook path.** A tunnel that points at the whole web container publishes the sign-in page and the entire API to the internet. Restrict it to the one path the phone needs. With a Cloudflare tunnel, give the hostname an ingress rule with `path: ^/api/devices/[0-9]+/webhook$` and end the rules with `service: http_status:404`; with a reverse proxy, allow only that path and `POST`. Every webhook request is signed with the device's own key and refused outside a five-minute window, so a leaked URL alone does nothing, but the path restriction keeps the rest of the application off the internet.
+
+How the worker uses the phone:
+- **Sending:** `POST /message` on the phone with our message id as the gateway's id (`cc-<id>`), so delivery events match and a retry after a lost answer is recognised by the phone. Any 2xx counts as sent (the phone queued it; the carrier's word comes later by webhook). A 400 or 422 fails the message at once; a timeout, an unreachable phone, wrong credentials or a 5xx is retried with the usual backoff, then marked failed, and the device shows as `error`. A 409 for a repeated id is taken to mean an earlier try got through (**assumed from the gateway's design, not yet confirmed on a real phone**).
+- **Receiving:** only by webhook, never polled. The worker checks the phone is reachable every cycle, which is how an offline phone shows up as `error`.
+- **Same phone, one worker:** only the worker named in the device's `worker_id` talks to it.
+
+How the API treats webhooks:
+- **Received** (`sms:received`): stored through the same path as any inbound SMS. The webhook answers 200 only after the commit; the app retries anything else for days. Each event is stored once (by the event id), so a retry creates no duplicate. A sender that is not a phone number is acknowledged and dropped.
+- **Delivery** (`sms:delivered`, `sms:failed`): matched to our message by the id we give the gateway (`cc-<message id>`), and applied only to a message of that same phone that is `sending` or `sent`. `delivered` and `failed` are final. A `sent` report from the worker never overwrites one the phone already made. Events for ids that are not ours are acknowledged and ignored.
+- **Errors:** a bad or stale signature, an unknown device and a device that is not `android` all get the same 401. A signed body that is not a valid event gets 400. Everything else (pings, MMS, batches) gets 200 and is ignored.
 
 ## Troubleshooting
 
@@ -236,7 +268,7 @@ Behaviour to know:
 
 ## Logging and modem errors
 
-The API and the worker write one line per event to stderr (`2026-11-09 08:00:00 WARNING app.worker: ...`), at the level in `LOG_LEVEL`, so `docker compose logs api worker` (or journald, for native processes) is the log. What is logged at WARNING and above: failed and blocked sign-ins (with the username and address), a modem that cannot be reached, messages that fail after their retries (with the modem's error), SMS that could not be stored, and the worker marking messages `failed` after a crash.
+The API and the worker write one line per event to stderr (`2026-11-09 08:00:00 WARNING comm_center_worker: ...`), at the level in `LOG_LEVEL`, so `docker compose logs api worker` (or journald, for native processes) is the log. What is logged at WARNING and above: failed and blocked sign-ins (with the username and address), a modem that cannot be reached, messages that fail after their retries (with the modem's error), SMS that could not be stored, and the worker marking messages `failed` after a crash.
 
 Modem problems are also visible in the app. The worker records a device's `status` (`online`, `offline`, `error`) and its latest error and time, and people who can read every message (admin, operator, auditor) see them in `GET /devices` and in a banner on the Messages page whenever a modem is `error` or `offline`. The last error is kept after recovery, as history, until the next one replaces it. A message that could not be sent also shows its error in the Messages table.
 

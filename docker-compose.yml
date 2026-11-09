@@ -27,6 +27,8 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret}
+      # Derives each Android phone's webhook signing key (`app.cli webhook-info`).
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-only-webhook-secret-change-me-dev-only}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Believe the web container's X-Forwarded-For, so login rate limiting sees each visitor's
       # address rather than nginx's. Safe only while nothing untrusted can reach the API port
@@ -38,37 +40,56 @@ services:
       db:
         condition: service_healthy
 
-  # The GSM worker owns the serial ports, so it is a process of its own, never part of the API.
-  # It starts with the rest of the stack (profile `app`); `--profile worker` starts it alone.
-  # Only the fake provider exists so far: it LOGS sends instead of transmitting them (and marks
-  # them sent), and registers a `fake` device by itself if none exists. Do not run it where real
-  # messages matter. Append a JSON line to /tmp/fake-inbox.jsonl in this container to "receive" an
-  # SMS (see docs/DEPLOYMENT.md). The real modem provider also needs the serial device passed through
-  # (`devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]`) once the hardware is available.
-  worker:
+  # One-shot setup for the worker: makes sure the worker account exists with WORKER_SECRET (and, if
+  # no device exists yet, a fake one for it) so a fresh stack can send out of the box. It needs the
+  # database, so it runs from the API image after the API has migrated it, and exits when done.
+  worker-setup:
     profiles: ["app", "worker"]
     build: ./apps/api
-    command: ["/opt/venv/bin/python", "-m", "app.worker", "--provider", "fake", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
+    command: ["/opt/venv/bin/python", "-m", "app.cli", "ensure-worker", "--name", "${WORKER_NAME:-local}", "--fake-device"]
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
-      # How long the fake modem takes per message (seconds): the delay plus up to the jitter.
-      WORKER_FAKE_SEND_DELAY_SECONDS: ${WORKER_FAKE_SEND_DELAY_SECONDS:-2}
-      WORKER_FAKE_SEND_JITTER_SECONDS: ${WORKER_FAKE_SEND_JITTER_SECONDS:-1}
-    healthcheck:
-      # Healthy while the loops keep touching the heartbeat file (the API runs the migrations).
-      test: ["CMD", "/opt/venv/bin/python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.heartbeat')<60 else 1)"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
+      WORKER_SECRET: ${WORKER_SECRET:-dev-only-worker-secret-change-me}
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
       api:
         condition: service_healthy
         required: false  # waits for the API (it runs the migrations) when that profile is on
+
+  # The worker holds the devices (serial ports, phones), so it is a process of its own, never part
+  # of the API. It has NO database access: it signs in to the API as a worker account and learns
+  # from it which devices to run. It starts with the rest of the stack (profile `app`);
+  # `--profile worker` starts it alone, against an API elsewhere (set WORKER_API_URL). Devices of
+  # the `fake` provider only LOG sends instead of transmitting them (and mark them sent): do not
+  # use them where real messages matter. Append a JSON line to /tmp/fake-inbox.jsonl in this
+  # container to "receive" an SMS (see docs/DEPLOYMENT.md). A modem also needs its serial device
+  # passed through (`devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]`) once the hardware is available.
+  worker:
+    profiles: ["app", "worker"]
+    build: ./apps/worker  # its own image: no database driver, no API code
+    command: ["/opt/venv/bin/python", "-m", "comm_center_worker", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
+    environment:
+      WORKER_API_URL: ${WORKER_API_URL:-http://api:8000}
+      WORKER_NAME: ${WORKER_NAME:-local}
+      WORKER_SECRET: ${WORKER_SECRET:-dev-only-worker-secret-change-me}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
+      # How long the fake modem takes per message (seconds): the delay plus up to the jitter.
+      WORKER_FAKE_SEND_DELAY_SECONDS: ${WORKER_FAKE_SEND_DELAY_SECONDS:-2}
+      WORKER_FAKE_SEND_JITTER_SECONDS: ${WORKER_FAKE_SEND_JITTER_SECONDS:-1}
+    healthcheck:
+      # Healthy while the API keeps answering the worker's sessions (it touches the heartbeat file
+      # only then), so a worker that cannot reach the API reads as unhealthy.
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/worker.heartbeat')<60 else 1)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      worker-setup:
+        condition: service_completed_successfully
 
   web:
     profiles: ["app"]

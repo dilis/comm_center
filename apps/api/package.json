@@ -9,8 +9,11 @@
     "test:integration": "uv run pytest -m db",
     "migrate": "uv run alembic upgrade head",
     "create-admin": "uv run python -m app.cli create-admin",
+    "create-worker": "uv run python -m app.cli create-worker",
+    "ensure-worker": "uv run python -m app.cli ensure-worker",
+    "assign-device": "uv run python -m app.cli assign-device",
     "register-device": "uv run python -m app.cli register-device",
-    "worker": "uv run python -m app.worker",
+    "gen:worker-contract": "uv run python -m app.export_worker_contract > ../worker/contract/worker-api.json",
     "import-contacts": "uv run python -m scripts.import_contacts"
   }
 }

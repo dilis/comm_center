@@ -115,6 +115,72 @@
         "title": "BulkSendResult",
         "type": "object"
       },
+      "ClaimOut": {
+        "properties": {
+          "lease_seconds": {
+            "title": "Lease Seconds",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimedMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "lease_seconds"
+        ],
+        "title": "ClaimOut",
+        "type": "object"
+      },
+      "ClaimRequest": {
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "integer"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Wait Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "ClaimRequest",
+        "type": "object"
+      },
+      "ClaimedMessage": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "phone_number": {
+            "title": "Phone Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "phone_number",
+          "content"
+        ],
+        "title": "ClaimedMessage",
+        "type": "object"
+      },
       "ContactIn": {
         "properties": {
           "email": {
@@ -416,6 +482,35 @@
         "title": "DeviceOut",
         "type": "object"
       },
+      "DeviceStatusIn": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "offline",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DeviceStatusIn",
+        "type": "object"
+      },
       "GroupOut": {
         "properties": {
           "id": {
@@ -476,6 +571,87 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InboundIn": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "integer"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          },
+          "sender": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Sender",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "ref",
+          "sender",
+          "content",
+          "received_at"
+        ],
+        "title": "InboundIn",
+        "type": "object"
+      },
+      "InboundOut": {
+        "properties": {
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stored",
+          "duplicate",
+          "message_id"
+        ],
+        "title": "InboundOut",
+        "type": "object"
+      },
+      "LeaseOut": {
+        "properties": {
+          "lease_seconds": {
+            "title": "Lease Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lease_seconds"
+        ],
+        "title": "LeaseOut",
         "type": "object"
       },
       "LoginOut": {
@@ -1075,6 +1251,34 @@
         "title": "RefreshRequest",
         "type": "object"
       },
+      "ResultIn": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "enum": [
+              "sent",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ResultIn",
+        "type": "object"
+      },
       "SendRequest": {
         "properties": {
           "contact_id": {
@@ -1103,6 +1307,100 @@
           "contact_id"
         ],
         "title": "SendRequest",
+        "type": "object"
+      },
+      "SessionDevice": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone_number": {
+            "title": "Phone Number",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "phone_number",
+          "config"
+        ],
+        "title": "SessionDevice",
+        "type": "object"
+      },
+      "SessionOut": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/SessionDevice"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "worker_id",
+          "protocol_version",
+          "devices"
+        ],
+        "title": "SessionOut",
+        "type": "object"
+      },
+      "SessionRequest": {
+        "properties": {
+          "instance_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "version": {
+            "maxLength": 64,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "protocol_version",
+          "providers",
+          "instance_id"
+        ],
+        "title": "SessionRequest",
         "type": "object"
       },
       "Skipped": {
@@ -1406,6 +1704,47 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkerToken": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "WorkerToken",
+        "type": "object"
+      },
+      "WorkerTokenRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "secret"
+        ],
+        "title": "WorkerTokenRequest",
         "type": "object"
       }
     },
@@ -2037,6 +2376,51 @@
         "summary": "List Devices",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/devices/{device_id}/webhook": {
+      "post": {
+        "description": "An event from the phone. Answers 200 only after the work is committed, because the app\nkeeps retrying anything else for days.",
+        "operationId": "webhook_devices__device_id__webhook_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Webhook Devices  Device Id  Webhook Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Webhook",
+        "tags": [
+          "webhooks"
         ]
       }
     },
@@ -3169,6 +3553,337 @@
         "summary": "Unlock User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/worker/claim": {
+      "post": {
+        "description": "Hand the next queued message to the worker, leased to it for ``lease_seconds`` (extend or\nreport before then). Waits up to ``wait_seconds`` for one to arrive.",
+        "operationId": "claim_worker_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/devices/{device_id}/status": {
+      "post": {
+        "description": "Health of a device. An error is kept as history after the device recovers.",
+        "operationId": "device_status_worker_devices__device_id__status_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceStatusIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Device Status",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/inbound": {
+      "post": {
+        "description": "Store a received SMS, finding or creating the sender's contact. Answers 200 only after the\ncommit, so the worker may then forget the message on the device.",
+        "operationId": "inbound_worker_inbound_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboundIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboundOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Inbound",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/messages/{message_id}/extend": {
+      "post": {
+        "operationId": "extend_lease_worker_messages__message_id__extend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Extend Lease",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/messages/{message_id}/result": {
+      "post": {
+        "description": "What happened to a message the worker holds. ``sent`` means the device accepted it.",
+        "operationId": "report_result_worker_messages__message_id__result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResultIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Report Result",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/session": {
+      "post": {
+        "description": "The handshake and heartbeat: records what the worker is, and tells it which devices to run.",
+        "operationId": "session_worker_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Session",
+        "tags": [
+          "worker"
+        ]
+      }
+    },
+    "/worker/token": {
+      "post": {
+        "operationId": "token_worker_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Token",
+        "tags": [
+          "worker"
         ]
       }
     }

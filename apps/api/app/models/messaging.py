@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -25,6 +26,7 @@ class GsmDevice(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(f"phone_number {E164}", name="e164"),
         UniqueConstraint("agent_user_id", name="uq_gsm_device_agent_user_id"),
         Index("ix_gsm_device_owner_id_deleted_at", "owner_id", "deleted_at"),
+        Index("ix_gsm_device_worker_id", "worker_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -37,6 +39,15 @@ class GsmDevice(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         server_default="offline",
     )
     agent_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    # Which kind of device this is, how to reach it (no secrets: see SPECS.md 4.7) and the worker
+    # that serves it.
+    provider: Mapped[str] = mapped_column(
+        Enum("fake", "android", "gsm_modem", name="gsm_device_provider"),
+        nullable=False,
+        server_default="fake",
+    )
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("(JSON_OBJECT())"))
+    worker_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("worker_account.id"))
     # The latest modem problem, kept after recovery so people can see what went wrong and when.
     last_error: Mapped[str | None] = mapped_column(String(500))
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime)

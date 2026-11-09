@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-only-secret-change-me-dev-only-secret"
+DEV_WEBHOOK_SECRET = "dev-only-webhook-secret-change-me-dev-only"
 
 
 class Settings(BaseSettings):
@@ -9,8 +10,13 @@ class Settings(BaseSettings):
     # Signs access and refresh tokens. The default is for development only: set a long random
     # value (for example `openssl rand -hex 32`) anywhere else.
     jwt_secret: str = DEV_JWT_SECRET
+    # Derives each Android device's webhook signing key (see `webhook-info`). Set a long random value
+    # anywhere else; changing it means re-entering the key in every phone.
+    webhook_secret: str = DEV_WEBHOOK_SECRET
     access_token_ttl_seconds: int = 15 * 60
     refresh_token_ttl_seconds: int = 7 * 24 * 60 * 60
+    # Workers sign in again when this runs out (they have no refresh token).
+    worker_token_ttl_seconds: int = 15 * 60
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR or CRITICAL (API and worker)
     # Login rate limiting: this many failures for one username (or LOGIN_MAX_FAILURES_PER_IP
     # for one client address) within the lockout window block further attempts until the oldest
@@ -25,14 +31,11 @@ class Settings(BaseSettings):
     # Region used to read phone numbers typed without a country code.
     default_phone_region: str = "PH"
 
-    # GSM worker (a separate process, see docs/DEPLOYMENT.md).
-    worker_poll_interval_seconds: float = 2.0  # idle wait between cycles
-    worker_max_attempts: int = 3  # sends per message before it is marked failed
-    worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
-    # The fake provider imitates a modem: each send takes this long (plus up to the jitter).
-    worker_fake_send_delay_seconds: float = 2.0
-    worker_fake_send_jitter_seconds: float = 1.0
-    worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched every cycle
+    # What the API tells workers (the worker program has its own settings, see docs/DEPLOYMENT.md).
+    # A worker that claims a message holds it for this long (it can extend); past that the message
+    # is failed, never re-sent. Claim requests may wait up to the long-poll time for a message.
+    worker_lease_seconds: int = 120
+    worker_long_poll_seconds: int = 20
 
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
 

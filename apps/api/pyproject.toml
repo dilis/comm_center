@@ -26,7 +26,8 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+# ../worker: the integration tests in tests/worker run the real worker code against the real API.
+pythonpath = [".", "../worker"]
 markers = ["db: needs a running MySQL (integration test)"]
 
 [tool.ruff]

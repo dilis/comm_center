@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import security
 from app.authz import AuthUser, effective_permissions
 from app.db import get_db
-from app.models import User
+from app.models import User, WorkerAccount
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -44,3 +44,23 @@ def get_current_user(
 ) -> AuthUser:
     """The caller with permissions loaded fresh from the database on every request."""
     return AuthUser(id=user.id, permissions=effective_permissions(db, user.id))
+
+
+def get_current_worker(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> WorkerAccount:
+    """The worker behind a worker token. User tokens (and the other way round) are refused because
+    the two kinds differ in their ``typ`` claim."""
+    if credentials is None:
+        raise unauthorized()
+    try:
+        claims = security.decode_token(credentials.credentials, "worker")
+    except security.TokenError:
+        raise unauthorized() from None
+    worker = db.scalars(
+        select(WorkerAccount).where(WorkerAccount.id == int(claims["sub"]))
+    ).one_or_none()
+    if worker is None:
+        raise unauthorized()
+    return worker

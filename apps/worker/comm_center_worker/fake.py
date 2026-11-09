@@ -4,11 +4,12 @@ import json
 import logging
 import random
 import time
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.worker.provider import InboundSms, ProviderError
+from comm_center_worker.provider import InboundSms, ProviderError
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class FakeProvider:
         self.send_jitter = send_jitter
         self._sleep = sleep
         self.sent: list[tuple[str, str]] = []
+        self.sent_ids: list[int | None] = []
         self.inbound: list[InboundSms] = []
         self.acknowledged: list[InboundSms] = []
         self.send_errors: list[Exception] = []
@@ -43,8 +45,11 @@ class FakeProvider:
         self._inbox_file = inbox_file
         self._inbox_offset = 0
         self._inbox_count = 0
+        # Refs identify a message for good (the API stores each once), so they must differ between
+        # runs: a restarted process would otherwise reuse `file-1`.
+        self._run_id = uuid.uuid4().hex[:8]
 
-    def send(self, phone_number: str, content: str) -> None:
+    def send(self, phone_number: str, content: str, message_id: int | None = None) -> None:
         if self.send_errors:
             raise self.send_errors.pop(0)
         if self.on_send:
@@ -53,6 +58,7 @@ class FakeProvider:
             self._sleep(self.send_delay + random.uniform(0, self.send_jitter))
         log.info("fake send to %s: %r", phone_number, content)
         self.sent.append((phone_number, content))
+        self.sent_ids.append(message_id)
 
     def poll_inbound(self) -> list[InboundSms]:
         if self.poll_errors:
@@ -87,7 +93,7 @@ class FakeProvider:
             self._inbox_count += 1
             self.inbound.append(
                 InboundSms(
-                    ref=f"file-{self._inbox_count}",
+                    ref=f"file-{self._run_id}-{self._inbox_count}",
                     sender=sender,
                     content=text,
                     received_at=datetime.now(UTC).replace(tzinfo=None),
