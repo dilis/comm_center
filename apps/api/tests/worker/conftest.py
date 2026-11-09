@@ -1,16 +1,24 @@
-"""Worker tests commit for real (several connections must see each other's rows), so they clean up
-after themselves instead of relying on a rolled-back transaction."""
+"""Worker tests commit for real (the worker's threads and the API's requests use separate database
+sessions that must see each other's rows), so they clean up after themselves instead of relying on a
+rolled-back transaction. The worker talks to the real app through FastAPI's test client."""
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
+from app.db import get_db
 from app.devices import register_device
+from app.main import app
+from app.worker.client import ApiClient
 from app.worker.fake import FakeProvider
+from app.worker_accounts import create_worker
 from tests.db.conftest import engine, test_db_url  # noqa: F401 - fixtures
 from tests.db.helpers import insert, make_contact, make_phone
 
 pytestmark = pytest.mark.db
+
+WORKER_NAME = "w1"
 
 
 @pytest.fixture
@@ -22,7 +30,17 @@ def session_factory(engine):  # noqa: F811
     yield factory
     with engine.begin() as c:
         c.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
-        for table in ("messages", "gsm_device", "contact_phone", "user_group"):
+        for table in (
+            "message_lease",
+            "inbound_ref",
+            "messages",
+            "gsm_device",
+            "worker_account",
+            "contact_phone",
+            "user_group",
+            "login_log",
+            "login_attempt",
+        ):
             c.execute(text(f"DELETE FROM {table}"))
         c.execute(text("DELETE FROM users WHERE id > :i"), {"i": base_users})
         c.execute(text("DELETE FROM contacts WHERE id > :i"), {"i": base_contacts})
@@ -30,10 +48,57 @@ def session_factory(engine):  # noqa: F811
 
 
 @pytest.fixture
-def device(session_factory):
+def http_app(session_factory):
+    """The real app on the test database, each request with its own session that really commits."""
+
+    def get_test_db():
+        with session_factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = get_test_db
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def worker(session_factory):
+    """The worker account (name ``w1``) and its secret."""
+    with session_factory() as db:
+        row, secret = create_worker(db, WORKER_NAME)
+    return row, secret
+
+
+@pytest.fixture
+def make_api(http_app, worker):
+    """Build an API client for the worker. Each one has its own HTTP client, as each thread of the
+    real worker does."""
+    _, secret = worker
+    made = []
+
+    def build() -> ApiClient:
+        api = ApiClient(TestClient(app), WORKER_NAME, secret)
+        made.append(api)
+        return api
+
+    yield build
+    for api in made:
+        api.close()
+
+
+@pytest.fixture
+def api(make_api):
+    return make_api()
+
+
+@pytest.fixture
+def device(session_factory, worker):
     with session_factory() as db:
         return register_device(
-            db, name="d1", serial_port="/dev/ttyUSB0", phone_number="+639170000000"
+            db,
+            name="d1",
+            serial_port="/dev/ttyUSB0",
+            phone_number="+639170000000",
+            worker=WORKER_NAME,
         )
 
 

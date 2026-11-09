@@ -1,4 +1,5 @@
-"""Admin commands: ``create-admin``, ``create-worker`` and ``register-device``
+"""Admin commands: ``create-admin``, ``create-worker``, ``ensure-worker``, ``register-device`` and
+``assign-device``
 (``python -m app.cli --help``)."""
 
 import argparse
@@ -9,8 +10,8 @@ import sys
 
 from app.bootstrap import BootstrapError, create_admin
 from app.db import SessionLocal
-from app.devices import PROVIDERS, DeviceError, register_device
-from app.worker_accounts import WorkerError, create_worker
+from app.devices import PROVIDERS, DeviceError, assign_device, ensure_fake_device, register_device
+from app.worker_accounts import WorkerError, create_worker, ensure_worker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,6 +22,15 @@ def main(argv: list[str] | None = None) -> int:
     admin.add_argument("--name", help="display name (defaults to the username)")
     worker = sub.add_parser("create-worker", help="register a worker program and print its secret")
     worker.add_argument("--name", required=True, help="short unique name the worker signs in with")
+    ensure = sub.add_parser(
+        "ensure-worker",
+        help="create a worker (or reset its secret) with the secret from an environment variable",
+    )
+    ensure.add_argument("--name", required=True)
+    ensure.add_argument("--secret-env", default="WORKER_SECRET", help="variable holding the secret")
+    ensure.add_argument(
+        "--fake-device", action="store_true", help="if no device exists, add a fake one for it"
+    )
     device = sub.add_parser("register-device", help="register a GSM device and its inbound agent")
     device.add_argument("--name", required=True, help="short unique name; the agent is gsm-<name>")
     device.add_argument("--serial-port", required=True, help="e.g. /dev/ttyUSB0")
@@ -32,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
         help='JSON object, no secrets, e.g. \'{"base_url": "http://10.0.0.5:8080"}\'',
     )
     device.add_argument("--worker", help="name of the worker that serves this device")
+    assign = sub.add_parser("assign-device", help="give an existing device to a worker")
+    assign.add_argument("--name", required=True, help="the device's name")
+    assign.add_argument("--worker", required=True, help="the worker account that will serve it")
+    assign.add_argument("--provider", choices=PROVIDERS, help="change the provider too")
+    assign.add_argument("--config", help="replace the config with this JSON object")
     args = parser.parse_args(argv)
 
     if args.command == "create-worker":
@@ -43,6 +58,46 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         print(f"created worker '{created.name}' (id {created.id}). Its secret is shown only now:")
         print(secret)
+        return 0
+
+    if args.command == "ensure-worker":
+        secret = os.environ.get(args.secret_env, "")
+        if not secret:
+            print(f"error: set {args.secret_env} to the worker's secret", file=sys.stderr)
+            return 1
+        with SessionLocal() as db:
+            try:
+                ensured, created = ensure_worker(db, args.name, secret)
+                fake = ensure_fake_device(db, ensured.name) if args.fake_device else None
+            except (WorkerError, DeviceError) as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        print(f"{'created' if created else 'updated'} worker '{ensured.name}' (id {ensured.id})")
+        if fake:
+            print(f"registered fake device '{fake.name}' for it")
+        return 0
+
+    if args.command == "assign-device":
+        config = None
+        if args.config is not None:
+            try:
+                config = json.loads(args.config)
+            except ValueError:
+                config = None
+            if not isinstance(config, dict):
+                print("error: --config must be a JSON object", file=sys.stderr)
+                return 1
+        with SessionLocal() as db:
+            try:
+                dev = assign_device(
+                    db, args.name, args.worker, provider=args.provider, config=config
+                )
+            except DeviceError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        print(
+            f"device '{dev.name}' now belongs to worker '{args.worker}' (provider {dev.provider})"
+        )
         return 0
 
     if args.command == "register-device":

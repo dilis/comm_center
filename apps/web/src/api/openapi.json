@@ -1371,6 +1371,12 @@
       },
       "SessionRequest": {
         "properties": {
+          "instance_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Instance Id",
+            "type": "string"
+          },
           "protocol_version": {
             "title": "Protocol Version",
             "type": "integer"
@@ -1391,7 +1397,8 @@
         "required": [
           "version",
           "protocol_version",
-          "providers"
+          "providers",
+          "instance_id"
         ],
         "title": "SessionRequest",
         "type": "object"

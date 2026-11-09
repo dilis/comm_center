@@ -30,28 +30,32 @@ def _fail_leases(db: Session, lease_ids: list[int], error: str) -> int:
     return len(lease_ids)
 
 
-def expire_leases(db: Session) -> int:
-    """Fail every message whose lease has run out. Returns how many."""
-    ids = list(
+def _lock_leases(db: Session, condition) -> list[int]:
+    """Lock the leases matching ``condition`` and return their message ids.
+
+    The matching rows are found with a plain read and then locked by primary key. A locking range
+    read (``WHERE expires_at < now FOR UPDATE``) takes gap locks, which block other workers'
+    lease inserts and deadlock under concurrent claims."""
+    candidates = list(db.scalars(select(MessageLease.message_id).where(condition)))
+    if not candidates:
+        return []
+    return list(
         db.scalars(
             select(MessageLease.message_id)
-            .where(MessageLease.expires_at < utcnow())
+            .where(MessageLease.message_id.in_(candidates), condition)
             .with_for_update(skip_locked=True)
         )
     )
-    return _fail_leases(db, ids, LEASE_EXPIRED)
+
+
+def expire_leases(db: Session) -> int:
+    """Fail every message whose lease has run out. Returns how many."""
+    return _fail_leases(db, _lock_leases(db, MessageLease.expires_at < utcnow()), LEASE_EXPIRED)
 
 
 def fail_worker_leases(db: Session, worker_id: int) -> int:
     """A worker that opens a new session cannot still be sending what it held before."""
-    ids = list(
-        db.scalars(
-            select(MessageLease.message_id)
-            .where(MessageLease.worker_id == worker_id)
-            .with_for_update(skip_locked=True)
-        )
-    )
-    return _fail_leases(db, ids, WORKER_RESTARTED)
+    return _fail_leases(db, _lock_leases(db, MessageLease.worker_id == worker_id), WORKER_RESTARTED)
 
 
 def claim_next(db: Session, worker: WorkerAccount, device_id: int) -> Message | None:

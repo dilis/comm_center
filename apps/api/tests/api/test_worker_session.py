@@ -57,7 +57,12 @@ def test_the_session_records_what_the_worker_reported(client, db, worker):
     assert row.last_seen_at is None
     client.post(
         "/worker/session",
-        json={"version": "1.2.3", "protocol_version": 1, "providers": ["fake", "android"]},
+        json={
+            "version": "1.2.3",
+            "protocol_version": 1,
+            "providers": ["fake", "android"],
+            "instance_id": "instance-a",
+        },
         headers=headers(client, "lab-pc", secret),
     )
     seen = db.execute(
@@ -78,7 +83,7 @@ def test_an_incompatible_protocol_version_is_refused_clearly(client, worker):
     assert "protocol" in r.json()["detail"] and "1" in r.json()["detail"]
 
 
-@pytest.mark.parametrize("missing", ["version", "protocol_version", "providers"])
+@pytest.mark.parametrize("missing", ["version", "protocol_version", "providers", "instance_id"])
 def test_the_report_is_required(client, worker, missing):
     _, secret = worker
     body = {k: v for k, v in SESSION.items() if k != missing}

@@ -85,4 +85,9 @@ def test_the_session_needs_a_token(client):
     assert client.post("/worker/session", json=SESSION).status_code == 401
 
 
-SESSION = {"version": "0.1.0", "protocol_version": 1, "providers": ["fake"]}
+SESSION = {
+    "version": "0.1.0",
+    "protocol_version": 1,
+    "providers": ["fake"],
+    "instance_id": "instance-a",
+}

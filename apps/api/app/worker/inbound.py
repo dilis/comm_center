@@ -1,41 +1,29 @@
-"""Inbound: store what the modem received, finding or creating the sender's contact."""
+"""Inbound: hand what the device received to the API, forgetting it on the device only after the
+API has stored it."""
 
 import logging
-from typing import Protocol
 
-from sqlalchemy.orm import Session, sessionmaker
-
-from app.inbound import ingest_message
-from app.models import Message
-from app.worker.provider import ChannelProvider, InboundSms
+from app.worker.client import ApiClient, ApiUnavailable
+from app.worker.provider import ChannelProvider
 
 log = logging.getLogger(__name__)
 
 
-class DeviceRef(Protocol):
-    id: int
-    agent_user_id: int
-
-
-def ingest(db: Session, device: DeviceRef, sms: InboundSms) -> Message | None:
-    """Add ``sms`` to the database (the caller commits). None if the sender is not a phone number."""
-    return ingest_message(db, device.agent_user_id, sms.sender, sms.content, sms.received_at)
-
-
-def process_inbound(
-    session_factory: sessionmaker, provider: ChannelProvider, device: DeviceRef
-) -> int:
-    """Poll the modem and store each message, acknowledging only after the commit (so a crash
-    re-delivers rather than loses). Returns how many messages were stored."""
+def process_inbound(api: ApiClient, provider: ChannelProvider, device_id: int) -> int:
+    """Poll the device and give each message to the API, acknowledging only once the API has
+    answered (so a crash re-delivers rather than loses). A message the API cannot take now is left
+    on the device. Returns how many messages the API stored."""
     stored = 0
     for sms in provider.poll_inbound():
         try:
-            with session_factory() as db:
-                message = ingest(db, device, sms)
-                db.commit()
+            result = api.inbound(device_id, sms)
+        except ApiUnavailable:
+            raise  # the API is down: stop and try the whole cycle later
         except Exception:
-            log.exception("could not store SMS %s; leaving it on the modem", sms.ref)
+            log.exception("could not store SMS %s; leaving it on the device", sms.ref)
             continue
-        provider.acknowledge(sms)  # also forgets unusable ones, or they would be polled forever
-        stored += message is not None
+        provider.acknowledge(
+            sms
+        )  # also forgets unusable and repeated ones, or they would come back
+        stored += result.stored
     return stored

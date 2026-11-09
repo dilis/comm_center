@@ -28,6 +28,8 @@ class WorkerAccount(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
     # what the worker reported in its latest session
     version: Mapped[str | None] = mapped_column(String(64))
     protocol_version: Mapped[int | None] = mapped_column(Integer)
+    # random per running process: a session with a new one means the worker restarted
+    instance_id: Mapped[str | None] = mapped_column(String(64))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 

@@ -42,13 +42,16 @@ def test_fake_provider_inbox_file_is_read_incrementally(tmp_path):
     assert [s.content for s in fake.poll_inbound()] == ["two"]
 
 
-def test_only_the_fake_provider_exists_until_hardware_arrives(capsys):
+def test_the_worker_needs_a_name_and_secret_to_start(capsys, monkeypatch):
+    from app.config import settings
     from app.worker.__main__ import main
 
+    monkeypatch.setattr(settings, "worker_name", "")
+    monkeypatch.setattr(settings, "worker_secret", "")
     with pytest.raises(SystemExit) as exit_info:
-        main(["--provider", "serial"])
+        main([])
     assert exit_info.value.code == 2
-    assert "invalid choice" in capsys.readouterr().err
+    assert "WORKER_NAME" in capsys.readouterr().err
 
 
 def test_fake_provider_takes_time_to_send_like_a_modem():
@@ -81,3 +84,16 @@ def test_by_default_the_fake_provider_is_instant_so_tests_stay_fast():
     slept = []
     FakeProvider(sleep=slept.append).send("+639171234567", "hi")
     assert slept == []
+
+
+def test_fake_inbox_refs_are_unique_across_restarts(tmp_path):
+    """The API stores a ref once per device, so a restarted provider must not reuse `file-1`."""
+    inbox = tmp_path / "inbox.jsonl"
+    inbox.write_text(json.dumps({"from": "0917 123 4567", "text": "one"}) + "\n")
+    first = FakeProvider(inbox_file=inbox).poll_inbound()
+    second = FakeProvider(inbox_file=inbox).poll_inbound()  # a restart reads the file again
+    assert first[0].ref != second[0].ref
+    one = FakeProvider(inbox_file=inbox)
+    with inbox.open("a") as f:
+        f.write(json.dumps({"from": "0917 123 4567", "text": "two"}) + "\n")
+    assert len({s.ref for s in one.poll_inbound()}) == 2  # and within one run

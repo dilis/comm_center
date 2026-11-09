@@ -46,3 +46,24 @@ def authenticate_worker(db: Session, name: str, secret: str) -> WorkerAccount | 
     hash_ = worker.secret_hash if worker else security.DUMMY_HASH
     valid = security.verify_password(hash_, secret)
     return worker if worker and valid else None
+
+
+MIN_SECRET_LENGTH = 16
+
+
+def ensure_worker(db: Session, name: str, secret: str) -> tuple[WorkerAccount, bool]:
+    """Create the worker with this secret, or give an existing one this secret (for deployments
+    that set the secret from the environment). Returns it and whether it was new. Commits."""
+    name = name.strip()
+    if not name or len(name) > 64:
+        raise WorkerError("a worker name of 1 to 64 characters is required")
+    if len(secret) < MIN_SECRET_LENGTH:
+        raise WorkerError(f"the secret must be at least {MIN_SECRET_LENGTH} characters")
+    worker = db.scalars(select(WorkerAccount).where(WorkerAccount.name == name)).one_or_none()
+    created = worker is None
+    if worker is None:
+        worker = WorkerAccount(name=name, secret_hash="", owner_id=SYSTEM_USER_ID)
+        db.add(worker)
+    worker.secret_hash = security.hash_password(secret)
+    db.commit()
+    return worker, created

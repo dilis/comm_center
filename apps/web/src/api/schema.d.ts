@@ -1087,6 +1087,8 @@ export interface components {
         };
         /** SessionRequest */
         SessionRequest: {
+            /** Instance Id */
+            instance_id: string;
             /** Protocol Version */
             protocol_version: number;
             /** Providers */

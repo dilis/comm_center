@@ -43,6 +43,9 @@ class SessionRequest(BaseModel):
     version: str = Field(max_length=64)
     protocol_version: int
     providers: list[str]  # the provider types this worker can run
+    # Random per running worker process. The same one again is a heartbeat; a new one means the
+    # worker restarted, so whatever the old process was sending is failed (delivery unknown).
+    instance_id: str = Field(min_length=1, max_length=64)
 
 
 class SessionDevice(BaseModel):
@@ -98,7 +101,9 @@ def session(
             f"unsupported protocol version {body.protocol_version}: this API speaks "
             f"protocol {PROTOCOL_VERSION}",
         )
-    dispatch.fail_worker_leases(db, worker.id)
+    if worker.instance_id != body.instance_id:
+        dispatch.fail_worker_leases(db, worker.id)
+        worker.instance_id = body.instance_id
     worker.version = body.version
     worker.protocol_version = body.protocol_version
     worker.last_seen_at = utcnow()

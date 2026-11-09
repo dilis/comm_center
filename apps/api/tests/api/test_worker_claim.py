@@ -8,6 +8,7 @@ from app.config import settings
 from app.devices import register_device
 from app.worker_accounts import create_worker
 from tests.api.conftest import auth_header
+from tests.api.test_worker_auth import SESSION
 from tests.api.worker_helpers import (
     PHONE,
     lease_row,
@@ -107,13 +108,24 @@ def test_a_live_lease_is_left_alone(client, conn, db, setup, ana):
     assert message_row(db, held).status == "sending" and lease_row(db, held) is not None
 
 
+def test_a_heartbeat_does_not_fail_what_the_worker_is_still_sending(client, conn, db, setup, ana):
+    headers, device = setup
+    client.post("/worker/session", json=SESSION, headers=headers)  # the worker starts
+    held = make_message(conn, ana)
+    claim(client, headers, device)
+    for _ in range(3):  # the same process keeps checking in while the send takes its time
+        client.post("/worker/session", json=SESSION, headers=headers)
+    assert message_row(db, held).status == "sending" and lease_row(db, held) is not None
+
+
 def test_a_new_session_fails_what_the_worker_left_sending(client, conn, db, setup, ana):
     headers, device = setup
+    client.post("/worker/session", json=SESSION, headers=headers)  # the process that crashes
     held = make_message(conn, ana)
     claim(client, headers, device)
     client.post(
         "/worker/session",
-        json={"version": "1", "protocol_version": 1, "providers": ["fake"]},
+        json={**SESSION, "instance_id": "instance-b"},
         headers=headers,
     )
     assert message_row(db, held).status == "failed"
@@ -129,7 +141,7 @@ def test_a_session_does_not_touch_another_workers_leases(client, conn, db, setup
     claim(client, other_headers, other_device)
     client.post(
         "/worker/session",
-        json={"version": "1", "protocol_version": 1, "providers": ["fake"]},
+        json={**SESSION, "instance_id": "instance-b"},
         headers=headers,
     )
     assert message_row(db, held).status == "sending"

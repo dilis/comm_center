@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     default_phone_region: str = "PH"
 
     # GSM worker (a separate process, see docs/DEPLOYMENT.md).
+    # How the worker reaches the API and signs in (a worker account, see `create-worker`).
+    worker_api_url: str = "http://127.0.0.1:8000"
+    worker_name: str = ""
+    worker_secret: str = ""
     worker_poll_interval_seconds: float = 2.0  # idle wait between cycles
     worker_max_attempts: int = 3  # sends per message before it is marked failed
     worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time

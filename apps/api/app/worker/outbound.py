@@ -1,20 +1,15 @@
-"""Outbound: claim queued messages from MySQL (the queue) and send them through the provider."""
+"""Outbound: claim a queued message from the API, send it through the provider, report the result."""
 
 import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session, sessionmaker
-
-from app.clock import utcnow
-from app.models import GsmDevice, Message
+from app.worker.client import ApiClient, ApiConflict, ApiUnavailable
 from app.worker.provider import ChannelProvider, PermanentSendError, ProviderError
 
 log = logging.getLogger(__name__)
-MAX_ERROR_LENGTH = 1000
-MAX_DEVICE_ERROR_LENGTH = 500  # the width of gsm_device.last_error
+REPORT_ATTEMPTS = 3  # tries to deliver a result to the API before giving up
 
 
 @dataclass(frozen=True)
@@ -27,70 +22,54 @@ class RetryPolicy:
         return self.backoff_base * 2 ** (attempt - 1)
 
 
-@dataclass(frozen=True)
-class Claimed:
-    id: int
-    phone_number: str
-    content: str
-
-
-def claim_next(db: Session, device_id: int, *, commit: bool = True) -> Claimed | None:
-    """Take the oldest queued message that no other worker holds (``FOR UPDATE SKIP LOCKED``) and
-    mark it ``sending`` on this device. With ``commit=False`` the row stays locked to the caller."""
-    message = db.scalars(
-        select(Message)
-        .where(Message.status == "queued", Message.channel == "gsm")  # soft-deleted rows excluded
-        .order_by(Message.created_at, Message.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    ).first()
-    if message is None:
-        db.rollback()
-        return None
-    message.status = "sending"
-    message.gsm_device_id = device_id
-    claimed = Claimed(message.id, message.phone_number, message.content)
-    if commit:
-        db.commit()
-    return claimed
-
-
-def _finish(
-    session_factory: sessionmaker, message_id: int, status: str, error: str | None = None
+def report_result(
+    api: ApiClient,
+    message_id: int,
+    status: str,
+    error: str | None,
+    policy: RetryPolicy,
+    sleep: Callable[[float], None],
 ) -> None:
-    # A core UPDATE: it also reaches a message that was soft-deleted while it was being sent.
-    values = {"status": status, "error_message": error[:MAX_ERROR_LENGTH] if error else None}
-    if status == "sent":
-        values["sent_at"] = utcnow()
-    with session_factory() as db:
-        db.execute(update(Message).where(Message.id == message_id).values(**values))
-        db.commit()
+    """Tell the API how the send ended. If it cannot be told, the message is failed by the API when
+    its lease runs out (delivery unknown): never re-sent."""
+    for attempt in range(1, REPORT_ATTEMPTS + 1):
+        try:
+            api.result(message_id, status, error)
+            return
+        except ApiConflict as exc:
+            log.warning("message %s: the API no longer holds it for us (%s)", message_id, exc)
+            return
+        except ApiUnavailable as exc:
+            if attempt == REPORT_ATTEMPTS:
+                log.error(
+                    "message %s: could not report %r (%s); the API will fail it when its lease "
+                    "runs out",
+                    message_id,
+                    status,
+                    exc,
+                )
+                return
+            sleep(policy.delay(attempt))
 
 
-def record_device_error(session_factory: sessionmaker, device_id: int, error: str) -> None:
-    """Keep the latest modem problem on the device so it shows up in ``GET /devices``."""
+def report_device_error(api: ApiClient, device_id: int, error: str) -> None:
     try:
-        with session_factory() as db:
-            db.execute(
-                update(GsmDevice)
-                .where(GsmDevice.id == device_id)
-                .values(last_error=error[:MAX_DEVICE_ERROR_LENGTH], last_error_at=utcnow())
-            )
-            db.commit()
+        api.device_status(device_id, "error", error)
     except Exception:  # health reporting must never stop the worker
-        log.exception("device %s: could not record the modem error", device_id)
+        log.exception("device %s: could not report the modem error", device_id)
 
 
 def send_one(
-    session_factory: sessionmaker,
+    api: ApiClient,
     provider: ChannelProvider,
     device_id: int,
     policy: RetryPolicy,
     sleep: Callable[[float], None] = time.sleep,
+    wait_seconds: float = 0,
 ) -> bool:
-    """Claim and send one message. Returns False when the queue is empty."""
-    with session_factory() as db:
-        claimed = claim_next(db, device_id)
+    """Claim and send one message. Returns False when the queue is empty. Raises ``ApiUnavailable``
+    if the API cannot be reached to claim."""
+    claimed = api.claim(device_id, wait_seconds)
     if claimed is None:
         return False
     try:
@@ -98,33 +77,25 @@ def send_one(
             try:
                 provider.send(claimed.phone_number, claimed.content)
             except PermanentSendError as exc:
-                _finish(session_factory, claimed.id, "failed", str(exc))
+                report_result(api, claimed.id, "failed", str(exc), policy, sleep)
                 log.warning("message %s rejected: %s", claimed.id, exc)
                 return True
             except ProviderError as exc:
                 if attempt == policy.max_attempts:
-                    _finish(session_factory, claimed.id, "failed", str(exc))
-                    record_device_error(session_factory, device_id, str(exc))
+                    report_result(api, claimed.id, "failed", str(exc), policy, sleep)
+                    report_device_error(api, device_id, str(exc))
                     log.warning("message %s failed after %s attempts: %s", claimed.id, attempt, exc)
                     return True
                 log.info("message %s attempt %s failed (%s); retrying", claimed.id, attempt, exc)
                 sleep(policy.delay(attempt))
+                try:
+                    api.extend(claimed.id)  # the retries take time: keep holding the message
+                except (ApiUnavailable, ApiConflict) as exc2:
+                    log.warning("message %s: could not extend the lease (%s)", claimed.id, exc2)
             else:
-                _finish(session_factory, claimed.id, "sent")
+                report_result(api, claimed.id, "sent", None, policy, sleep)
                 return True
     except Exception as exc:  # never leave a claimed message stuck in 'sending'
         log.exception("unexpected error sending message %s", claimed.id)
-        _finish(session_factory, claimed.id, "failed", f"unexpected error: {exc}")
+        report_result(api, claimed.id, "failed", f"unexpected error: {exc}", policy, sleep)
     return True
-
-
-def recover_interrupted(db: Session, device_id: int) -> int:
-    """Messages this device left ``sending`` when the worker died may or may not have gone out.
-    Re-sending risks a duplicate SMS, so they are failed for a person to decide."""
-    result = db.execute(
-        update(Message)
-        .where(Message.status == "sending", Message.gsm_device_id == device_id)
-        .values(status="failed", error_message="worker stopped while sending; delivery unknown")
-    )
-    db.commit()
-    return result.rowcount
