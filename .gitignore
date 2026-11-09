@@ -14,3 +14,6 @@ deploy/*.env
 
 # Spreadsheets hold personal data (names, phone numbers): never commit them
 *.xlsx
+
+# Local compose overrides hold secrets (for example an Android phone's login): never commit them
+docker-compose.override.yml

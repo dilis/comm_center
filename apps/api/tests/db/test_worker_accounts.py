@@ -135,3 +135,15 @@ def test_assign_device_rejects_unknown_names(session):
         assign_device(session, "d", "nobody")
     with pytest.raises(DeviceError, match="provider"):
         assign_device(session, "d", "lab-pc", provider="pigeon")
+
+
+def test_a_devices_own_number_may_be_in_a_range_the_phone_library_does_not_know_yet(session):
+    """The SIM's number is only shown to people, and numbering plans lag behind carriers."""
+    device = register_device(session, "newsim", "-", "+639904972662")
+    assert device.phone_number == "+639904972662"
+
+
+def test_a_devices_number_must_still_be_plausible(session):
+    for bad in ("123", "+63", "not a number", "+639"):
+        with pytest.raises(DeviceError, match="phone"):
+            register_device(session, f"bad{abs(hash(bad))}", "-", bad)

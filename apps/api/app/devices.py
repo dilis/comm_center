@@ -39,7 +39,7 @@ def register_device(
         if worker_id is None:
             raise DeviceError(f"unknown worker {worker!r}")
     try:
-        number = normalize_e164(phone_number)
+        number = normalize_e164(phone_number, strict=False)
     except ValueError:
         raise DeviceError(f"invalid phone number: {phone_number!r}") from None
     if not name.strip() or not serial_port.strip():
