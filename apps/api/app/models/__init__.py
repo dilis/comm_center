@@ -11,7 +11,7 @@ from app.models.authz import (
 from app.models.base import Base, OwnedMixin, SoftDeleteMixin, TimestampMixin
 from app.models.identity import Contact, ContactPhone, User
 from app.models.messaging import GsmDevice, Message, MessageRead
-from app.models.worker import WorkerAccount
+from app.models.worker import InboundRef, MessageLease, WorkerAccount
 
 __all__ = [
     "AccessGroup",
@@ -23,9 +23,11 @@ __all__ = [
     "GroupGroup",
     "GroupPermission",
     "GsmDevice",
+    "InboundRef",
     "LoginAttempt",
     "LoginLog",
     "Message",
+    "MessageLease",
     "MessageRead",
     "OwnedMixin",
     "Permission",

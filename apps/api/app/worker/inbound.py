@@ -3,12 +3,10 @@
 import logging
 from typing import Protocol
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Contact, ContactPhone, Message
-from app.phones import normalize_e164
+from app.inbound import ingest_message
+from app.models import Message
 from app.worker.provider import ChannelProvider, InboundSms
 
 log = logging.getLogger(__name__)
@@ -19,54 +17,9 @@ class DeviceRef(Protocol):
     agent_user_id: int
 
 
-def find_contact_id(db: Session, number: str) -> int | None:
-    """The live contact that holds ``number``, if any (soft-deleted rows are invisible)."""
-    return db.scalars(
-        select(ContactPhone.contact_id)
-        .join(Contact, Contact.id == ContactPhone.contact_id)
-        .where(ContactPhone.phone_e164 == number)
-    ).first()
-
-
 def ingest(db: Session, device: DeviceRef, sms: InboundSms) -> Message | None:
-    """Add ``sms`` to the database (the caller commits). None if the sender is not a phone number.
-
-    An unknown sender gets a contact named after the number, owned by the device's agent. Two
-    workers may race to create it; the unique index lets one win and the other re-reads.
-    """
-    try:
-        number = normalize_e164(sms.sender)
-    except ValueError:
-        log.warning("dropping SMS from %r: sender is not a phone number", sms.sender)
-        return None
-    contact_id = find_contact_id(db, number)
-    if contact_id is None:
-        try:
-            with db.begin_nested():
-                contact = Contact(name=number, type="person", owner_id=device.agent_user_id)
-                db.add(contact)
-                db.flush()
-                db.add(ContactPhone(contact_id=contact.id, phone_e164=number, is_primary=True))
-                db.flush()
-            contact_id = contact.id
-        except IntegrityError as exc:
-            if "uq_contact_phone_active_phone" not in str(exc):
-                raise
-            contact_id = find_contact_id(db, number)  # the other writer's contact
-            if contact_id is None:
-                raise
-    message = Message(
-        channel="gsm",
-        contact_id=contact_id,
-        phone_number=number,
-        content=sms.content,
-        status="received",
-        owner_id=device.agent_user_id,  # owned by the device's inbound agent, so it is inbound
-        received_at=sms.received_at,
-    )
-    db.add(message)
-    db.flush()
-    return message
+    """Add ``sms`` to the database (the caller commits). None if the sender is not a phone number."""
+    return ingest_message(db, device.agent_user_id, sms.sender, sms.content, sms.received_at)
 
 
 def process_inbound(

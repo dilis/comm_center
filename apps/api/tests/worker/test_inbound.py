@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
+from app import inbound as shared
 from app.worker import inbound
 from app.worker.inbound import ingest, process_inbound
 from app.worker.provider import InboundSms
@@ -89,14 +90,14 @@ def test_duplicate_key_race_rereads_the_winners_contact(
 ):
     winner = commit(make_contact, "Winner")
     commit(make_phone, winner, "+639171234567")
-    real = inbound.find_contact_id
+    real = shared.find_contact_id
     calls = []
 
     def blind_first_time(db, number):
         calls.append(number)
         return None if len(calls) == 1 else real(db, number)
 
-    monkeypatch.setattr(inbound, "find_contact_id", blind_first_time)
+    monkeypatch.setattr(shared, "find_contact_id", blind_first_time)
     m = ingest_committed(session_factory, device, sms())
     assert len(calls) == 2 and m.contact_id == winner
     # the losing attempt left no orphan contact behind

@@ -467,6 +467,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/worker/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim
+         * @description Hand the next queued message to the worker, leased to it for ``lease_seconds`` (extend or
+         *     report before then). Waits up to ``wait_seconds`` for one to arrive.
+         */
+        post: operations["claim_worker_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worker/devices/{device_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Device Status
+         * @description Health of a device. An error is kept as history after the device recovers.
+         */
+        post: operations["device_status_worker_devices__device_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worker/inbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbound
+         * @description Store a received SMS, finding or creating the sender's contact. Answers 200 only after the
+         *     commit, so the worker may then forget the message on the device.
+         */
+        post: operations["inbound_worker_inbound_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worker/messages/{message_id}/extend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extend Lease */
+        post: operations["extend_lease_worker_messages__message_id__extend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worker/messages/{message_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Result
+         * @description What happened to a message the worker holds. ``sent`` means the device accepted it.
+         */
+        post: operations["report_result_worker_messages__message_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/worker/session": {
         parameters: {
             query?: never;
@@ -547,6 +646,31 @@ export interface components {
             queued: components["schemas"]["MessageOut"][];
             /** Skipped */
             skipped: components["schemas"]["Skipped"][];
+        };
+        /** ClaimOut */
+        ClaimOut: {
+            /** Lease Seconds */
+            lease_seconds: number;
+            message: components["schemas"]["ClaimedMessage"] | null;
+        };
+        /** ClaimRequest */
+        ClaimRequest: {
+            /** Device Id */
+            device_id: number;
+            /**
+             * Wait Seconds
+             * @default 0
+             */
+            wait_seconds?: number;
+        };
+        /** ClaimedMessage */
+        ClaimedMessage: {
+            /** Content */
+            content: string;
+            /** Id */
+            id: number;
+            /** Phone Number */
+            phone_number: string;
         };
         /** ContactIn */
         ContactIn: {
@@ -651,6 +775,16 @@ export interface components {
              */
             status: "online" | "offline" | "error";
         };
+        /** DeviceStatusIn */
+        DeviceStatusIn: {
+            /** Error */
+            error?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "online" | "offline" | "error";
+        };
         /** GroupOut */
         GroupOut: {
             /** Id */
@@ -673,6 +807,36 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InboundIn */
+        InboundIn: {
+            /** Content */
+            content: string;
+            /** Device Id */
+            device_id: number;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** Ref */
+            ref: string;
+            /** Sender */
+            sender: string;
+        };
+        /** InboundOut */
+        InboundOut: {
+            /** Duplicate */
+            duplicate: boolean;
+            /** Message Id */
+            message_id: number | null;
+            /** Stored */
+            stored: boolean;
+        };
+        /** LeaseOut */
+        LeaseOut: {
+            /** Lease Seconds */
+            lease_seconds: number;
         };
         /** LoginOut */
         LoginOut: {
@@ -877,6 +1041,16 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** ResultIn */
+        ResultIn: {
+            /** Error */
+            error?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "sent" | "failed";
         };
         /** SendRequest */
         SendRequest: {
@@ -1996,6 +2170,169 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_worker_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_status_worker_devices__device_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceStatusIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inbound_worker_inbound_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboundIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extend_lease_worker_messages__message_id__extend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_result_worker_messages__message_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResultIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {
