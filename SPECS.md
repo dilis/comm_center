@@ -195,6 +195,27 @@ The same scope applies to list, detail, and counts, and drives the "All / Sent /
 - `group_group(parent_id, child_id)` direct nesting; `group_closure(ancestor_id, descendant_id)` precomputed
 - `user_group(user_id, group_id)`
 
+### 4.7 Decoupled workers (refactor; supersedes 4.4 where they differ)
+
+Goal: the API and the workers are separate programs with separate images and versions. A worker holds no database credentials and imports nothing from the API; it only calls the API over HTTP. Several kinds of SMS device sit behind it: `fake` (testing), `android` (SMS Gateway for Android, available now) and `gsm_modem` (future).
+
+- `[DECIDED]` **Pull only.** A worker always calls out to the API; the API never calls a worker. So a worker can be on the same network as its devices, behind NAT, or remote from the API, with no change.
+- `[DECIDED]` **Worker identity.** A worker is a system user (`is_system`, `login_enabled = false` for people) created by a CLI command that prints the secret once (nothing ships in a migration). It holds only worker permissions (`worker:claim`, `worker:report`, `worker:ingest`, in a `worker` group), covered by the permission matrix. It exchanges its credential for a short-lived access token and authenticates again when that expires (no refresh tokens). Its sessions are visible in `login_log`.
+- `[DECIDED]` **Devices belong to a worker.** `gsm_device` gains `provider` (`fake` / `android` / `gsm_modem`), `config` (JSON, no secrets) and `worker_id`, assigned explicitly by an administrator in the API, and replaces the overloaded `serial_port`. The API thus knows which workers it expects. A worker serves only the devices assigned to it.
+- `[DECIDED]` **Secrets stay with the worker.** `config` holds only a reference such as `password_ref: "PHONE1_PASSWORD"`; the worker resolves it from its own environment. The API database never stores or transmits a device credential.
+- **Handshake.** On start (and then as its heartbeat) the worker calls `POST /worker/session` with its version, the protocol version and the provider types it supports. The API refuses an incompatible protocol version with a clear error, and answers with the devices assigned to the worker, each with its `provider` and `config`. `last_seen` on the worker feeds the existing device `offline`/`error` banner, so an expected worker that never appears is visible.
+- **Outbound.** `POST /worker/claim` runs the `SELECT … FOR UPDATE SKIP LOCKED` claim on the API side, sets the message `sending` with a lease, and returns it (long-poll, so a queued message is not delayed by a poll interval). `POST /worker/messages/{id}/result` reports `sent` or `failed` (with the error), after the worker's own retries. The existing rule stays: a message left `sending` when its lease expires is failed, never re-sent. The message `id` is passed to the provider as an idempotency key where the device supports one.
+- **Inbound.** Two shapes behind one rule (a message is stored, then acknowledged):
+  - *Polled* devices (a modem): the worker reads the device and posts to `POST /worker/inbound`, then acknowledges on the device only after the API answers success.
+  - *Pushing* devices (Android): the phone sends a signed webhook straight to the API (`POST /devices/{id}/webhook`, HMAC-SHA256 of the raw body plus timestamp, rejected outside a five-minute window or on a bad signature), which stores the message and returns 200 only after the commit; the phone retries until then. The worker is not involved.
+  - Both go through the same API ingest code (find-or-create contact, E.164 snapshot, owner = the device's inbound agent), and are idempotent per `(device, provider message id)`.
+- `[DECIDED]` **Delivery status.** `delivered` becomes a real status, set from provider delivery reports (Android `sms:delivered`; a modem when it supports reports). `sent` still means the device accepted the message; the UI shows `delivered` as a further state.
+- **Provider interface** (in the worker): every provider has `send(message) -> result` and `close()`. A provider that can be polled also has `poll_inbound()` and `acknowledge()`. One contract test suite runs against every provider (fake, Android over a mocked HTTP transport, and the modem over a simulated serial port).
+- **Contract and versioning.** The contract is the API's OpenAPI schema plus a protocol version checked in the handshake. The worker's client is generated from the schema (as the web client is), so the two share no Python package. The API image owns the schema and migrations; the worker image has no database driver.
+- `[OPEN]` Whether the phone can reach the API over HTTPS for webhooks (SMS Gateway requires HTTPS except for localhost). If not, a relay is needed.
+- `[OPEN]` Lease length, long-poll timeout, and whether one worker may serve devices of several kinds (assumed yes).
+- Unchanged: ownership, message direction derived from the owner, immutable messages (the worker side updates only `status`, `sent_at`, `error_message`), soft deletes, and the agent users per device.
+
 ## 5. Open Questions Summary
 
 Resolved: multi-channel scope, message update, `is_deleted` flag, Python-in-Turborepo, package manager, `packages/ui`, worker process model, device management scope, ownership model, message visibility via permissions, `owner_id` reassignment (deferred), message direction derived from owner, `contact_id` non-null with auto-created contacts for unknown senders.
@@ -240,6 +261,8 @@ Still open:
 **Phase 6: Frontend** (done, see outcomes below; can start after Phase 2 and run alongside 3 to 5). App shell, login, route guards, permission-aware UI; shared `DataTable`; Users, Contacts, Messages pages; typed API client generated from FastAPI's OpenAPI schema.
 
 **Phase 7: Hardening** (done, see outcomes below). Logging and modem-error visibility, login rate limiting, deployment approach.
+
+**Phase 8: Decoupled workers** (planned, see 4.7). (1) Worker accounts, the session handshake, and device `provider`/`config`/`worker_id` (migration); (2) claim, result and inbound endpoints, with the worker moved onto them; (3) the Android webhook, delivery status and the idempotency key; (4) split the worker into its own app and image with the generated client, the protocol version check and the shared provider contract tests; (5) the Android provider (already written against the old interface) and docs. Tests first at each step; the old in-process worker keeps working until step 2 replaces it.
 
 **Risks.** Phase 1 blocks almost everything and is intricate, so review it before moving on. Hardware is the main schedule risk, mitigated by the fake provider. Open items from section 5 are needed at: `username` reuse in Phase 1; filter/sort columns in Phases 3 and 6; retry policy and `delivered` in Phase 5; restore after Phase 3; dev seed data late.
 
