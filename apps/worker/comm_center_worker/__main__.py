@@ -1,20 +1,20 @@
 """The worker process: ``python -m comm_center_worker``.
 
-A process of its own that holds the devices (serial ports, phones). It signs in to the API as a
-worker account, learns from it which devices are assigned to it and runs one loop per device, each
-in its own thread. It never touches the database. It stops cleanly on SIGINT or SIGTERM.
+A process of its own that holds a device (a serial port, a phone). It signs in to the API as that
+device's agent, learns from it which device it serves and runs a loop for it. Which kind of device
+that is (``WORKER_PROVIDER``) and how to reach it is this process's own business: the API does not
+know. It never touches the database. It stops cleanly on SIGINT or SIGTERM.
 """
 
 import argparse
 import logging
-import os
 import signal
 import threading
 from pathlib import Path
 
 import httpx
 
-from comm_center_worker.android import from_device
+from comm_center_worker.android import from_config
 from comm_center_worker.client import ApiClient
 from comm_center_worker.config import settings
 from comm_center_worker.fake import FakeProvider
@@ -26,9 +26,6 @@ from comm_center_worker.supervisor import Supervisor
 
 log = logging.getLogger("comm_center_worker")
 
-# Provider types this worker can run. The API decides which device uses which.
-SUPPORTED_PROVIDERS = ["fake", "android"]
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="comm_center_worker")
@@ -37,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if not (settings.worker_name and settings.worker_secret):
-        parser.error("WORKER_NAME and WORKER_SECRET are required (see `create-worker`)")
+        parser.error("WORKER_NAME and WORKER_SECRET are required (see `register-device`)")
     configure_logging(settings.log_level)
 
     heartbeat_file = Path(settings.worker_heartbeat_file)
@@ -52,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         return ApiClient(http, settings.worker_name, settings.worker_secret)
 
     def make_provider(device: dict) -> ChannelProvider:
-        if device["provider"] == "fake":
+        if settings.worker_provider == "fake":
             log.warning(
                 "device %s uses the FAKE provider: messages are marked sent but NOT transmitted",
                 device["name"],
@@ -63,9 +60,14 @@ def main(argv: list[str] | None = None) -> int:
                 send_jitter=settings.worker_fake_send_jitter_seconds,
                 sleep=lambda seconds: stop.wait(seconds),  # a shutdown interrupts a pending send
             )
-        if device["provider"] == "android":
-            return from_device(device, os.environ, timeout=settings.worker_android_timeout_seconds)
-        raise ValueError(f"this worker cannot run provider {device['provider']!r}")
+        if settings.worker_provider == "android":
+            return from_config(
+                settings.worker_android_base_url,
+                settings.worker_android_username,
+                settings.worker_android_password,
+                timeout=settings.worker_android_timeout_seconds,
+            )
+        raise ValueError(f"this worker cannot run provider {settings.worker_provider!r}")
 
     def make_worker(device: dict) -> DeviceWorker:
         return DeviceWorker(
@@ -79,9 +81,9 @@ def main(argv: list[str] | None = None) -> int:
 
     api = new_api()
     try:
-        Supervisor(
-            api, make_worker, SUPPORTED_PROVIDERS, stop, settings.worker_poll_interval_seconds
-        ).run(heartbeat_file.touch)
+        Supervisor(api, make_worker, stop, settings.worker_poll_interval_seconds).run(
+            heartbeat_file.touch
+        )
     finally:
         api.close()
     return 0

@@ -11,8 +11,10 @@ def insert(conn, table: str, **cols) -> int:
 
 
 def make_contact(conn, name="Someone", owner_id=SYSTEM_USER_ID, **cols) -> int:
+    """``name`` goes whole into ``first_name`` (``contacts.name`` is generated from the parts)."""
     cols.setdefault("type", "person")
-    return insert(conn, "contacts", name=name, owner_id=owner_id, **cols)
+    cols.setdefault("first_name", name)
+    return insert(conn, "contacts", owner_id=owner_id, **cols)
 
 
 def make_user(conn, username, contact_id=None, owner_id=SYSTEM_USER_ID, **cols) -> int:

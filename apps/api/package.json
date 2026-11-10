@@ -9,11 +9,12 @@
     "test:integration": "uv run pytest -m db",
     "migrate": "uv run alembic upgrade head",
     "create-admin": "uv run python -m app.cli create-admin",
-    "create-worker": "uv run python -m app.cli create-worker",
-    "ensure-worker": "uv run python -m app.cli ensure-worker",
-    "assign-device": "uv run python -m app.cli assign-device",
     "register-device": "uv run python -m app.cli register-device",
+    "ensure-device": "uv run python -m app.cli ensure-device",
+    "reset-device-secret": "uv run python -m app.cli reset-device-secret",
     "gen:worker-contract": "uv run python -m app.export_worker_contract > ../worker/contract/worker-api.json",
-    "import-contacts": "uv run python -m scripts.import_contacts"
+    "import-contacts": "uv run python -m scripts.import_contacts",
+    "xlsx-to-csv": "uv run python -m scripts.xlsx_to_csv",
+    "import-contacts-csv": "uv run python -m scripts.import_contacts_csv"
   }
 }

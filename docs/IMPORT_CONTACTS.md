@@ -97,3 +97,36 @@ which is why the dry run comes first.
 ## About the spreadsheet
 
 It holds personal data, so `*.xlsx` is in `.gitignore`: it cannot be committed by accident.
+
+## Importing from a CSV file (names split into first, middle and last)
+
+The Excel importer above keeps the whole name in one cell and splits it with a simple rule (first
+word, last word, the rest in between). For names that need care, go through a CSV you can read and
+correct before importing.
+
+1. **Make the CSV from the spreadsheet** (from `apps/api`):
+   ```sh
+   uv run python -m scripts.xlsx_to_csv "../../Counseling the Heart Registration Count.xlsx" ../../contacts_import.csv
+   ```
+   It writes `first_name,middle_name,last_name,phone,email` (the email is the sheet's `Customer email`; if one number has several emails the first is kept and the rest are noted), one row per distinct number, and prints the
+   names it had to guess. The rules: a **middle initial** (`C.`, `S`) is the middle name and
+   *everything before it is the first name* (`Zetha Flosy C. Orpilla` is Zetha Flosy / C. /
+   Orpilla); particles (`de`, `dela`) and suffixes (`Jr.`) stay with the last name; a leading `Ms` or
+   `Mr` is dropped; ALL CAPS or all lower case words are capitalised; with no initial the first word
+   is the first name and the words between it and the last name are the middle name (those are the
+   rows it lists for you to check). When one number has two spellings, the fuller one is kept.
+2. **Open the CSV and correct it** (a spreadsheet program works; save as UTF-8 CSV).
+3. **Dry run, then import:**
+   ```sh
+   uv run python -m scripts.import_contacts_csv ../../contacts_import.csv --owner admin --dry-run
+   uv run python -m scripts.import_contacts_csv ../../contacts_import.csv --owner admin
+   ```
+   Options: `--verbose` (list numbers that already exist), `--strict` (stop instead of skipping bad
+   rows). `first_name` and `phone` are required; `middle_name`, `last_name` and `email` may be empty or
+   absent (an invalid email is left out and reported); column order and header case do not matter. Phone handling, ownership, "number already in
+   the database is left alone" and all-or-nothing are the same as above.
+
+Contacts already imported keep their names: the importer never edits an existing contact. To redo
+them, soft-delete those contacts first (see "Undoing an import").
+
+`*.csv` is in `.gitignore`, like `*.xlsx`.

@@ -107,7 +107,7 @@ def test_the_contract_describes_the_operations_the_client_uses():
 def test_every_call_matches_the_contract_in_both_directions():
     server = ContractServer()
     api = client(server)
-    assert api.session("0.1.0", ["fake"], "instance-1")["devices"] is not None
+    assert api.session("0.1.0", "instance-1")["devices"] is not None
     assert api.claim(3, 5) is not None  # a message, with its lease
     api.extend(7)
     api.result(7, "sent")
@@ -129,7 +129,7 @@ def test_the_session_answer_the_supervisor_reads_has_its_fields(field):
     props = resolve({"$ref": "#/components/schemas/SessionOut"})["properties"]
     assert field in props
     device = resolve({"$ref": "#/components/schemas/SessionDevice"})["properties"]
-    assert {"id", "name", "provider", "config"} <= set(device)  # what make_worker reads
+    assert {"id", "name"} <= set(device)  # what make_worker reads
 
 
 def test_the_protocol_version_the_client_speaks_is_accepted_by_the_contract():
@@ -138,7 +138,6 @@ def test_the_protocol_version_the_client_speaks_is_accepted_by_the_contract():
     body = {
         "version": "1",
         "protocol_version": PROTOCOL_VERSION,
-        "providers": [],
         "instance_id": "i",
     }
     check_body(operation("POST", "/worker/session"), body)

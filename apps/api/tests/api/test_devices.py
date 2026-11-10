@@ -12,7 +12,7 @@ pytestmark = pytest.mark.db
 
 @pytest.fixture
 def modem(db):
-    return register_device(db, name="m1", serial_port="/dev/ttyUSB0", phone_number="+639170000000")
+    return register_device(db, name="m1", phone_number="+639170000000")
 
 
 def test_lists_devices_with_status_and_last_error(client, conn, db, modem):

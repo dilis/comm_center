@@ -23,7 +23,7 @@ def h(client, boss):
 
 
 def create(client, h, **body):
-    body.setdefault("name", "Ana")
+    body.setdefault("first_name", body.pop("name", "Ana"))
     return client.post("/contacts", json=body, headers=h)
 
 
@@ -89,7 +89,7 @@ def test_update_contact_replaces_fields_and_phones(client, h):
         f"/contacts/{cid}",
         headers=h,
         json={
-            "name": "Ana B",
+            "first_name": "Ana B",
             "type": "entity",
             "email": None,
             "notes": "x",
@@ -106,13 +106,13 @@ def test_update_contact_replaces_fields_and_phones(client, h):
 
 def test_update_without_phones_keeps_them(client, h):
     cid = create(client, h, phones=[{"phone": "+639171234567"}]).json()["id"]
-    r = client.put(f"/contacts/{cid}", headers=h, json={"name": "New"})
+    r = client.put(f"/contacts/{cid}", headers=h, json={"first_name": "New"})
     assert r.json()["name"] == "New" and len(r.json()["phones"]) == 1
 
 
 def test_update_cannot_change_owner(client, h, boss, conn):
     cid = create(client, h).json()["id"]
-    r = client.put(f"/contacts/{cid}", headers=h, json={"name": "A", "owner_id": 1})
+    r = client.put(f"/contacts/{cid}", headers=h, json={"first_name": "A", "owner_id": 1})
     assert r.json()["owner_id"] == boss
 
 
@@ -120,7 +120,7 @@ def test_update_phone_conflict_keeps_old_phones(client, h):
     create(client, h, name="Other", phones=[{"phone": "+639181234567"}])
     cid = create(client, h, phones=[{"phone": "+639171234567"}]).json()["id"]
     r = client.put(
-        f"/contacts/{cid}", headers=h, json={"name": "Ana", "phones": [{"phone": "+639181234567"}]}
+        f"/contacts/{cid}", headers=h, json={"first_name": "Ana", "phones": [{"phone": "+639181234567"}]}
     )
     assert r.status_code == 409
     assert client.get(f"/contacts/{cid}", headers=h).json()["phones"][0]["phone"] == "+639171234567"
@@ -209,8 +209,8 @@ def test_read_all_roles_see_everyone_but_cannot_write(client, conn):
         make_login_user(conn, role, role)
         h = auth_header(client, role)
         assert client.get(f"/contacts/{cid}", headers=h).status_code == 200
-        assert client.post("/contacts", json={"name": "x"}, headers=h).status_code == 403
-        assert client.put(f"/contacts/{cid}", json={"name": "x"}, headers=h).status_code == 403
+        assert client.post("/contacts", json={"first_name": "x"}, headers=h).status_code == 403
+        assert client.put(f"/contacts/{cid}", json={"first_name": "x"}, headers=h).status_code == 403
         assert client.delete(f"/contacts/{cid}", headers=h).status_code == 403
 
 
@@ -218,7 +218,7 @@ def test_operator_can_create_and_update_but_not_delete(client, conn):
     make_login_user(conn, "op", "operator")
     h = auth_header(client, "op")
     cid = create(client, h).json()["id"]
-    assert client.put(f"/contacts/{cid}", json={"name": "Renamed"}, headers=h).status_code == 200
+    assert client.put(f"/contacts/{cid}", json={"first_name": "Renamed"}, headers=h).status_code == 200
     assert client.delete(f"/contacts/{cid}", headers=h).status_code == 403
 
 
@@ -249,7 +249,7 @@ def test_read_own_user_sees_and_edits_only_own_contacts(client, conn):
     assert [c["id"] for c in body["items"]] == [mine] and body["total"] == 1
     for call in (
         lambda: client.get(f"/contacts/{theirs}", headers=h),
-        lambda: client.put(f"/contacts/{theirs}", json={"name": "x"}, headers=h),
+        lambda: client.put(f"/contacts/{theirs}", json={"first_name": "x"}, headers=h),
         lambda: client.delete(f"/contacts/{theirs}", headers=h),
     ):
         assert call().status_code == 404
@@ -266,9 +266,44 @@ def test_auto_created_contacts_are_visible_to_read_all_only(client, conn):
 def test_unauthenticated(client):
     for call in (
         client.get("/contacts"),
-        client.post("/contacts", json={"name": "x"}),
+        client.post("/contacts", json={"first_name": "x"}),
         client.get("/contacts/1"),
-        client.put("/contacts/1", json={"name": "x"}),
+        client.put("/contacts/1", json={"first_name": "x"}),
         client.delete("/contacts/1"),
     ):
         assert call.status_code == 401
+
+
+# ---- name parts ----------------------------------------------------------------------------
+
+def test_name_is_first_middle_and_last_joined(client, h):
+    r = create(client, h, first_name="Ana", middle_name="Maria", last_name="Cruz")
+    body = r.json()
+    assert r.status_code == 201
+    assert (body["first_name"], body["middle_name"], body["last_name"]) == ("Ana", "Maria", "Cruz")
+    assert body["name"] == "Ana Maria Cruz"
+
+
+def test_middle_and_last_names_are_optional_and_blank_means_none(client, h):
+    body = create(client, h, first_name=" Ana ", middle_name="  ", last_name="").json()
+    assert (body["first_name"], body["middle_name"], body["last_name"]) == ("Ana", None, None)
+    assert body["name"] == "Ana"
+
+
+def test_a_first_name_is_required(client, h):
+    assert client.post("/contacts", json={"last_name": "Cruz"}, headers=h).status_code == 422
+    assert create(client, h, first_name="  ").status_code == 422
+
+
+def test_an_entity_has_only_a_first_name(client, h):
+    assert create(client, h, type="entity", first_name="Acme", last_name="Inc").status_code == 422
+    assert create(client, h, type="entity", first_name="Acme Inc").json()["name"] == "Acme Inc"
+
+
+def test_search_and_sort_use_the_full_name(client, h):
+    create(client, h, first_name="Zed", middle_name="Q", last_name="Zulu")
+    create(client, h, first_name="Yan", last_name="Yoyo")
+    names = [c["name"] for c in client.get("/contacts?q=Q Zulu", headers=h).json()["items"]]
+    assert names == ["Zed Q Zulu"]
+    names = [c["name"] for c in client.get("/contacts?sort=name", headers=h).json()["items"]]
+    assert names.index("Yan Yoyo") < names.index("Zed Q Zulu")

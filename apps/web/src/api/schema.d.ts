@@ -598,7 +598,7 @@ export interface paths {
         put?: never;
         /**
          * Session
-         * @description The handshake and heartbeat: records what the worker is, and tells it which devices to run.
+         * @description The handshake and heartbeat: records what the worker is, and tells it which device it serves.
          */
         post: operations["session_worker_session_post"];
         delete?: never;
@@ -697,8 +697,12 @@ export interface components {
         ContactIn: {
             /** Email */
             email?: string | null;
-            /** Name */
-            name: string;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
             /** Notes */
             notes?: string | null;
             /**
@@ -722,8 +726,14 @@ export interface components {
             created_at: string;
             /** Email */
             email: string | null;
+            /** First Name */
+            first_name: string;
             /** Id */
             id: number;
+            /** Last Name */
+            last_name: string | null;
+            /** Middle Name */
+            middle_name: string | null;
             /** Name */
             name: string;
             /** Notes */
@@ -749,8 +759,12 @@ export interface components {
         ContactUpdate: {
             /** Email */
             email?: string | null;
-            /** Name */
-            name: string;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
             /** Notes */
             notes?: string | null;
             /** Phones */
@@ -888,10 +902,16 @@ export interface components {
         MeOut: {
             /** Email */
             email: string | null;
+            /** First Name */
+            first_name: string;
             /** Groups */
             groups: string[];
             /** Id */
             id: number;
+            /** Last Name */
+            last_name: string | null;
+            /** Middle Name */
+            middle_name: string | null;
             /** Name */
             name: string;
             /** Permissions */
@@ -905,8 +925,12 @@ export interface components {
         MessageOut: {
             /** Channel */
             channel: string;
+            /** Contact First Name */
+            contact_first_name: string;
             /** Contact Id */
             contact_id: number;
+            /** Contact Last Name */
+            contact_last_name: string | null;
             /** Contact Name */
             contact_name: string;
             /** Content */
@@ -1055,8 +1079,12 @@ export interface components {
             clear_email?: boolean;
             /** Email */
             email?: string | null;
-            /** Name */
-            name?: string | null;
+            /** First Name */
+            first_name?: string | null;
+            /** Last Name */
+            last_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -1084,18 +1112,12 @@ export interface components {
         };
         /** SessionDevice */
         SessionDevice: {
-            /** Config */
-            config: {
-                [key: string]: unknown;
-            };
             /** Id */
             id: number;
             /** Name */
             name: string;
             /** Phone Number */
             phone_number: string;
-            /** Provider */
-            provider: string;
         };
         /** SessionOut */
         SessionOut: {
@@ -1103,8 +1125,6 @@ export interface components {
             devices: components["schemas"]["SessionDevice"][];
             /** Protocol Version */
             protocol_version: number;
-            /** Worker Id */
-            worker_id: number;
         };
         /** SessionRequest */
         SessionRequest: {
@@ -1112,8 +1132,6 @@ export interface components {
             instance_id: string;
             /** Protocol Version */
             protocol_version: number;
-            /** Providers */
-            providers: string[];
             /** Version */
             version: string;
         };
@@ -1169,14 +1187,20 @@ export interface components {
             created_at: string;
             /** Email */
             email: string | null;
+            /** First Name */
+            first_name: string;
             /** Groups */
             groups: components["schemas"]["GroupRef"][];
             /** Id */
             id: number;
             /** Is Active */
             is_active: boolean;
+            /** Last Name */
+            last_name: string | null;
             /** Locked */
             locked: boolean;
+            /** Middle Name */
+            middle_name: string | null;
             /** Name */
             name: string;
             /** Owner Id */
@@ -1191,17 +1215,21 @@ export interface components {
          * @description Omitted fields stay as they are; an explicit ``email: null`` clears the email.
          *
          *     ``username``, ``is_active`` and ``group_ids`` are checked against ``users`` permissions;
-         *     ``name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.
+         *     ``first_name``, ``middle_name``, ``last_name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.
          */
         UserUpdate: {
             /** Email */
             email?: string | null;
+            /** First Name */
+            first_name?: string | null;
             /** Group Ids */
             group_ids?: number[] | null;
             /** Is Active */
             is_active?: boolean | null;
-            /** Name */
-            name?: string | null;
+            /** Last Name */
+            last_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
             /** Phones */
             phones?: components["schemas"]["PhoneIn"][] | null;
             /** Username */

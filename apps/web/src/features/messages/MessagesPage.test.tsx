@@ -11,7 +11,7 @@ import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
-  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin", unread: false,
+  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", contact_first_name: "Ana", contact_last_name: "Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin", unread: false,
   gsm_device_id: null, reply_to_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
 };
 const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
@@ -599,7 +599,7 @@ describe("placeholders in the send dialog", () => {
     await userEvent.click(await within(dialog).findByRole("checkbox", { name: /Ana Cruz/ }));
     setText(within(dialog).getByLabelText("Message"), "Hi {{nam}}");
     await userEvent.click(within(dialog).getByRole("button", { name: /^Send/ }));
-    expect(await within(dialog).findByText("Unknown placeholder {{nam}}; supported: {{name}}")).toBeInTheDocument();
+    expect(await within(dialog).findByText("Unknown placeholder {{nam}}; supported: {{name}}, {{first_name}}, {{last_name}}")).toBeInTheDocument();
     expect(posted).toBe(0);
   });
 

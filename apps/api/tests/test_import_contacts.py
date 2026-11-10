@@ -187,3 +187,8 @@ def test_the_report_lines_up_and_says_when_nothing_was_saved():
         "1",
     ]  # every value starts in one column
     assert "row 3: Ben - '12345'" in real
+
+
+def test_emails_are_collected_per_number_once():
+    planned = plan([Row(2, "Ana", "09171234567", "A@x.com"), Row(3, "Ana", "09171234567", "a@x.com"), Row(4, "Ana", "09171234567", "b@x.com")])
+    assert planned.contacts[0].emails == ["a@x.com", "b@x.com"]

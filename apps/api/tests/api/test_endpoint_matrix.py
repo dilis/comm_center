@@ -56,11 +56,11 @@ def call(client, endpoint, headers, contact_id, user_id, message_id):
     )
     body = None
     if endpoint == "POST /contacts":
-        body = {"name": "New"}
+        body = {"first_name": "New"}
     elif endpoint == "PUT /contacts/{c}":
-        body = {"name": "Renamed"}
+        body = {"first_name": "Renamed"}
     elif endpoint == "POST /users":
-        body = {"username": "fresh", "password": "a long enough pass", "contact": {"name": "Fresh"}}
+        body = {"username": "fresh", "password": "a long enough pass", "contact": {"first_name": "Fresh"}}
     elif endpoint == "POST /messages/send":
         body = {"contact_id": contact_id, "content": "hi"}
     elif endpoint == "POST /messages/send-bulk":

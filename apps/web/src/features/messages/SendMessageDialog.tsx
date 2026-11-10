@@ -129,7 +129,7 @@ export function SendMessageDialog({ onClose }: { onClose: () => void }) {
               control={control}
               name="content"
               render={({ field }) => (
-                <ComposeField id="message-content" value={field.value} onChange={field.onChange} error={errors.content?.message} previewName={selected[0]?.name} />
+                <ComposeField id="message-content" value={field.value} onChange={field.onChange} error={errors.content?.message} previewFor={selected[0]} />
               )}
             />
             {failure && (

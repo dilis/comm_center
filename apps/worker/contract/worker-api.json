@@ -220,11 +220,6 @@
       },
       "SessionDevice": {
         "properties": {
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -236,18 +231,12 @@
           "phone_number": {
             "title": "Phone Number",
             "type": "string"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "provider",
-          "phone_number",
-          "config"
+          "phone_number"
         ],
         "title": "SessionDevice",
         "type": "object"
@@ -264,14 +253,9 @@
           "protocol_version": {
             "title": "Protocol Version",
             "type": "integer"
-          },
-          "worker_id": {
-            "title": "Worker Id",
-            "type": "integer"
           }
         },
         "required": [
-          "worker_id",
           "protocol_version",
           "devices"
         ],
@@ -290,13 +274,6 @@
             "title": "Protocol Version",
             "type": "integer"
           },
-          "providers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Providers",
-            "type": "array"
-          },
           "version": {
             "maxLength": 64,
             "title": "Version",
@@ -306,7 +283,6 @@
         "required": [
           "version",
           "protocol_version",
-          "providers",
           "instance_id"
         ],
         "title": "SessionRequest",
@@ -646,7 +622,7 @@
     },
     "/worker/session": {
       "post": {
-        "description": "The handshake and heartbeat: records what the worker is, and tells it which devices to run.",
+        "description": "The handshake and heartbeat: records what the worker is, and tells it which device it serves.",
         "operationId": "session_worker_session_post",
         "requestBody": {
           "content": {

@@ -1,14 +1,15 @@
-"""Placeholders in message text: ``Hello {{name}}`` becomes ``Hello Ana Cruz``, per recipient.
+"""Placeholders in message text: ``Hello {{first_name}}`` becomes ``Hello Ana``, per recipient.
 
 Rendering happens when the message is created, so the stored text is exactly what is sent and the
-message log stays immutable. Only ``name`` exists for now; add more to ``SUPPORTED`` and pass their
-values to ``render``.
+message log stays immutable. ``name`` is the full name, ``first_name`` and ``last_name`` its parts
+(``last_name`` is empty for a contact without one). Add more to ``SUPPORTED`` and pass their values
+to ``render``.
 """
 
 import re
 from collections.abc import Mapping
 
-SUPPORTED = ("name",)
+SUPPORTED = ("name", "first_name", "last_name")
 _PLACEHOLDER = re.compile(r"\{\{\s*([^{}]*?)\s*\}\}")
 
 

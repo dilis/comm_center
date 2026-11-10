@@ -4,8 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from app.devices import register_device
-from app.worker_accounts import create_worker
-from tests.api.worker_helpers import make_worker_with_device, sign_in
+from tests.api.worker_helpers import make_worker_with_device, other_worker, sign_in
 from tests.db.helpers import make_contact, make_phone
 
 pytestmark = pytest.mark.db
@@ -75,9 +74,9 @@ def test_a_repeated_ref_is_stored_once(client, db, setup):
 
 def test_the_same_ref_on_another_device_is_a_different_message(client, db, setup):
     headers, device = setup
-    second = register_device(db, "d2", "x", "+639170000009", worker="w1")
+    other_headers, second = other_worker(client, db, "d2", "+639170000009")
     post(client, headers, device)
-    post(client, headers, second)
+    post(client, other_headers, second)
     assert len(messages(db)) == 2
 
 
@@ -97,8 +96,7 @@ def test_a_time_without_a_zone_is_taken_as_utc(client, db, setup):
 
 def test_another_workers_device_is_not_found(client, db, setup):
     headers, _ = setup
-    create_worker(db, "w2")
-    theirs = register_device(db, "d2", "x", "+639170000001", worker="w2")
+    theirs = register_device(db, "d2", "+639170000001")
     assert post(client, headers, theirs).status_code == 404
 
 
@@ -154,8 +152,7 @@ def test_a_long_device_error_is_cut_to_fit(client, db, setup):
 def test_status_values_and_ownership_are_checked(client, db, setup):
     headers, device = setup
     assert status(client, headers, device, status="exploded").status_code == 422
-    create_worker(db, "w2")
-    theirs = register_device(db, "d2", "x", "+639170000001", worker="w2")
+    theirs = register_device(db, "d2", "+639170000001")
     assert status(client, headers, theirs, status="online").status_code == 404
     assert (
         client.post(f"/worker/devices/{device.id}/status", json={"status": "online"}).status_code

@@ -1,13 +1,13 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -26,12 +26,10 @@ class GsmDevice(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(f"phone_number {E164}", name="e164"),
         UniqueConstraint("agent_user_id", name="uq_gsm_device_agent_user_id"),
         Index("ix_gsm_device_owner_id_deleted_at", "owner_id", "deleted_at"),
-        Index("ix_gsm_device_worker_id", "worker_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    serial_port: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(
         Enum("online", "offline", "error", name="gsm_device_status"),
@@ -39,15 +37,13 @@ class GsmDevice(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         server_default="offline",
     )
     agent_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
-    # Which kind of device this is, how to reach it (no secrets: see SPECS.md 4.7) and the worker
-    # that serves it.
-    provider: Mapped[str] = mapped_column(
-        Enum("fake", "android", "gsm_modem", name="gsm_device_provider"),
-        nullable=False,
-        server_default="fake",
-    )
-    config: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("(JSON_OBJECT())"))
-    worker_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("worker_account.id"))
+    # What the program serving this device (a worker, signed in as ``agent_user_id``) reported in
+    # its latest session. What kind of device it is, and how to reach it, is the worker's business.
+    version: Mapped[str | None] = mapped_column(String(64))
+    protocol_version: Mapped[int | None] = mapped_column(Integer)
+    # Random per running process: a session with a new one means the worker restarted.
+    instance_id: Mapped[str | None] = mapped_column(String(64))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
     # The latest modem problem, kept after recovery so people can see what went wrong and when.
     last_error: Mapped[str | None] = mapped_column(String(500))
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -74,6 +70,8 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         Enum("queued", "sending", "sent", "failed", "delivered", "received", name="message_status"),
         nullable=False,
     )
+    # Outbound only. While queued: the device it is meant for (empty: any device may take it).
+    # Once claimed: the device that is sending it.
     gsm_device_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("gsm_device.id"))
     # Set once at creation, for a reply: the received message it answers.
     reply_to_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("messages.id"))

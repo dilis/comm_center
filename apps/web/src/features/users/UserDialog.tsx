@@ -8,6 +8,7 @@ import { api, errorMessage, unwrap } from "@/api/client";
 import type { components } from "@/api/schema";
 import { useAuth } from "@/auth/AuthContext";
 import { canReadResource } from "@/auth/permissions";
+import { NameFields, nameBody, nameShape } from "@/components/NameFields";
 import { FieldError } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,13 +28,14 @@ const createSchema = z
     password: z.string().min(10, "At least 10 characters").max(256),
     is_active: z.boolean(),
     mode: z.enum(["new", "existing"]),
-    name: z.string().trim(),
+    ...nameShape,
+    first_name: z.string().trim().max(255, "At most 255 characters"), // required only for a new contact (below)
     email: optionalEmail,
     contactId: z.number().nullable(),
     groupIds: z.array(z.number()),
   })
   .superRefine((v, ctx) => {
-    if (v.mode === "new" && v.name === "") ctx.addIssue({ code: "custom", path: ["name"], message: "Enter a full name" });
+    if (v.mode === "new" && v.first_name === "") ctx.addIssue({ code: "custom", path: ["first_name"], message: "Enter a first name" });
     if (v.mode === "existing" && v.contactId === null) ctx.addIssue({ code: "custom", path: ["contactId"], message: "Choose a contact" });
   });
 type CreateValues = z.infer<typeof createSchema>;
@@ -54,7 +56,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
   } = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
     defaultValues: {
-      username: "", password: "", is_active: true, name: "", email: "", contactId: null, groupIds: [],
+      username: "", password: "", is_active: true, first_name: "", middle_name: "", last_name: "", email: "", contactId: null, groupIds: [],
       mode: canCreateContact ? "new" : "existing",
     },
   });
@@ -67,7 +69,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
         api.POST("/users", {
           body:
             v.mode === "new"
-              ? { ...base, contact: { name: v.name, email: v.email || null, type: "person", phones: [] } }
+              ? { ...base, contact: { ...nameBody(v), email: v.email || null, type: "person", phones: [] } }
               : { ...base, contact_id: v.contactId },
         }),
       );
@@ -123,12 +125,14 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
               )}
             </div>
             {mode === "new" ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-name">Full name</Label>
-                  <Input id="user-name" {...register("name")} />
-                  <FieldError message={errors.name?.message} />
-                </div>
+              <div className="space-y-3">
+                <NameFields
+                  idPrefix="user"
+                  first={register("first_name")}
+                  middle={register("middle_name")}
+                  last={register("last_name")}
+                  errors={errors}
+                />
                 <div className="space-y-1.5">
                   <Label htmlFor="user-email">Email</Label>
                   <Input id="user-email" type="email" {...register("email")} />
@@ -175,7 +179,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
 const editSchema = z.object({
   username: z.string().trim().min(1, "Enter a username").max(64, "At most 64 characters"),
   is_active: z.boolean(),
-  name: z.string().trim(),
+  ...nameShape,
   email: optionalEmail,
   groupIds: z.array(z.number()),
 });
@@ -193,7 +197,7 @@ export function EditUserDialog({ user, onClose }: { user: User; onClose: () => v
   } = useForm<EditValues>({
     resolver: zodResolver(editSchema),
     defaultValues: {
-      username: user.username, is_active: user.is_active, name: user.name, email: user.email ?? "", groupIds: initialGroups,
+      username: user.username, is_active: user.is_active, first_name: user.first_name, middle_name: user.middle_name ?? "", last_name: user.last_name ?? "", email: user.email ?? "", groupIds: initialGroups,
     },
   });
 
@@ -203,7 +207,9 @@ export function EditUserDialog({ user, onClose }: { user: User; onClose: () => v
       const body: components["schemas"]["UserUpdate"] = {};
       if (v.username !== user.username) body.username = v.username;
       if (v.is_active !== user.is_active) body.is_active = v.is_active;
-      if (editsContact && v.name !== user.name) body.name = v.name;
+      if (editsContact && v.first_name !== user.first_name) body.first_name = v.first_name;
+      if (editsContact && v.middle_name !== (user.middle_name ?? "")) body.middle_name = v.middle_name || null;
+      if (editsContact && v.last_name !== (user.last_name ?? "")) body.last_name = v.last_name || null;
       if (editsContact && v.email !== (user.email ?? "")) body.email = v.email || null;
       const same = [...v.groupIds].sort().join() === [...initialGroups].sort().join();
       if (!same) body.group_ids = v.groupIds;
@@ -238,17 +244,20 @@ export function EditUserDialog({ user, onClose }: { user: User; onClose: () => v
             <FieldError message={errors.username?.message} />
           </div>
           {editsContact && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-name">Full name</Label>
-                <Input id="edit-name" {...register("name")} />
-              </div>
+            <>
+              <NameFields
+                idPrefix="edit"
+                first={register("first_name")}
+                middle={register("middle_name")}
+                last={register("last_name")}
+                errors={errors}
+              />
               <div className="space-y-1.5">
                 <Label htmlFor="edit-email">Email</Label>
                 <Input id="edit-email" type="email" {...register("email")} />
                 <FieldError message={errors.email?.message} />
               </div>
-            </div>
+            </>
           )}
           <Controller control={control} name="groupIds" render={({ field }) => <GroupPicker value={field.value} onChange={field.onChange} />} />
           <div className="flex items-center gap-2 text-sm">

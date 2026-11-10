@@ -22,7 +22,7 @@ MAX_BODY_BYTES = 256 * 1024
 
 
 def _refused() -> HTTPException:
-    # One answer for an unknown device, a device of another kind and a bad signature, so nothing
+    # One answer for an unknown device and a bad signature, so nothing
     # reveals which device ids exist.
     return HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid signature")
 
@@ -83,7 +83,7 @@ def _handle(db: Session, device_id: int, body: bytes, timestamp: str | None, sig
     if not webhooks.verify(device_id, body, timestamp, signature):
         raise _refused()
     device = db.scalars(select(GsmDevice).where(GsmDevice.id == device_id)).one_or_none()
-    if device is None or device.provider != "android":
+    if device is None:
         raise _refused()
     try:
         envelope = json.loads(body)

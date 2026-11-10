@@ -43,9 +43,9 @@ test("a 401 refreshes once and replays the request with the new token, body inta
     }),
     http.post("*/api/auth/refresh", () => HttpResponse.json(pair(2))),
   );
-  const { response } = await api.POST("/contacts", { body: { name: "Ana" } });
+  const { response } = await api.POST("/contacts", { body: { first_name: "Ana" } });
   expect(response.status).toBe(201);
-  expect(bodies).toEqual([{ name: "Ana" }, { name: "Ana" }]);
+  expect(bodies).toEqual([{ first_name: "Ana" }, { first_name: "Ana" }]);
   expect(getAccessToken()).toBe("access-2");
 });
 

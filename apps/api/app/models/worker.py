@@ -5,36 +5,17 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    Integer,
     String,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, OwnedMixin, SoftDeleteMixin, TimestampMixin
-
-
-class WorkerAccount(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
-    """A worker program that is expected to connect (never a person). It signs in with its name
-    and a secret that is shown once and stored only as a hash."""
-
-    __tablename__ = "worker_account"
-    __table_args__ = (UniqueConstraint("name", name="uq_worker_account_name"),)
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(64), nullable=False)
-    secret_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    # what the worker reported in its latest session
-    version: Mapped[str | None] = mapped_column(String(64))
-    protocol_version: Mapped[int | None] = mapped_column(Integer)
-    # random per running process: a session with a new one means the worker restarted
-    instance_id: Mapped[str | None] = mapped_column(String(64))
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+from app.models.base import Base
 
 
 class MessageLease(Base):
-    """A worker's hold on a message it is sending. Bookkeeping kept apart from the message, which
+    """A device's hold on a message it is sending. Bookkeeping kept apart from the message, which
     stays immutable. A lease that runs out fails the message; it is never handed out again."""
 
     __tablename__ = "message_lease"
@@ -42,9 +23,6 @@ class MessageLease(Base):
 
     message_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("messages.id"), primary_key=True, autoincrement=False
-    )
-    worker_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("worker_account.id"), nullable=False
     )
     device_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("gsm_device.id"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -60,7 +60,7 @@ export function ReplyDialog({ message, onClose }: { message: Message; onClose: (
             control={control}
             name="content"
             render={({ field }) => (
-              <ComposeField id="reply-content" value={field.value} onChange={field.onChange} error={errors.content?.message} previewName={message.contact_name} />
+              <ComposeField id="reply-content" value={field.value} onChange={field.onChange} error={errors.content?.message} previewFor={{ name: message.contact_name, first_name: message.contact_first_name, last_name: message.contact_last_name }} />
             )}
           />
           {failure && (

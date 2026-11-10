@@ -207,7 +207,6 @@ def test_inbound_message_reports_its_devices_id(client, h, mailbox, conn):
         conn,
         "gsm_device",
         name="d1",
-        serial_port="/dev/x",
         phone_number="+639170000000",
         agent_user_id=mailbox["agent"],
         owner_id=1,

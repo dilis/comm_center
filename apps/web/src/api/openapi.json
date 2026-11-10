@@ -195,11 +195,35 @@
             ],
             "title": "Email"
           },
-          "name": {
+          "first_name": {
             "maxLength": 255,
             "minLength": 1,
-            "title": "Name",
+            "title": "First Name",
             "type": "string"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "notes": {
             "anyOf": [
@@ -231,7 +255,7 @@
           }
         },
         "required": [
-          "name"
+          "first_name"
         ],
         "title": "ContactIn",
         "type": "object"
@@ -254,9 +278,35 @@
             ],
             "title": "Email"
           },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "name": {
             "title": "Name",
@@ -308,6 +358,9 @@
         "required": [
           "id",
           "name",
+          "first_name",
+          "middle_name",
+          "last_name",
           "type",
           "email",
           "notes",
@@ -335,11 +388,35 @@
             ],
             "title": "Email"
           },
-          "name": {
+          "first_name": {
             "maxLength": 255,
             "minLength": 1,
-            "title": "Name",
+            "title": "First Name",
             "type": "string"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "notes": {
             "anyOf": [
@@ -377,7 +454,7 @@
           }
         },
         "required": [
-          "name"
+          "first_name"
         ],
         "title": "ContactUpdate",
         "type": "object"
@@ -731,6 +808,10 @@
             ],
             "title": "Email"
           },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
           "groups": {
             "items": {
               "type": "string"
@@ -741,6 +822,28 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "name": {
             "title": "Name",
@@ -769,6 +872,9 @@
           "id",
           "username",
           "name",
+          "first_name",
+          "middle_name",
+          "last_name",
           "email",
           "phones",
           "groups",
@@ -783,9 +889,24 @@
             "title": "Channel",
             "type": "string"
           },
+          "contact_first_name": {
+            "title": "Contact First Name",
+            "type": "string"
+          },
           "contact_id": {
             "title": "Contact Id",
             "type": "integer"
+          },
+          "contact_last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Last Name"
           },
           "contact_name": {
             "title": "Contact Name",
@@ -904,6 +1025,8 @@
           "direction",
           "contact_id",
           "contact_name",
+          "contact_first_name",
+          "contact_last_name",
           "phone_number",
           "content",
           "status",
@@ -1221,7 +1344,7 @@
             ],
             "title": "Email"
           },
-          "name": {
+          "first_name": {
             "anyOf": [
               {
                 "maxLength": 255,
@@ -1232,7 +1355,31 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           }
         },
         "title": "ProfileUpdate",
@@ -1311,11 +1458,6 @@
       },
       "SessionDevice": {
         "properties": {
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -1327,18 +1469,12 @@
           "phone_number": {
             "title": "Phone Number",
             "type": "string"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "provider",
-          "phone_number",
-          "config"
+          "phone_number"
         ],
         "title": "SessionDevice",
         "type": "object"
@@ -1355,14 +1491,9 @@
           "protocol_version": {
             "title": "Protocol Version",
             "type": "integer"
-          },
-          "worker_id": {
-            "title": "Worker Id",
-            "type": "integer"
           }
         },
         "required": [
-          "worker_id",
           "protocol_version",
           "devices"
         ],
@@ -1381,13 +1512,6 @@
             "title": "Protocol Version",
             "type": "integer"
           },
-          "providers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Providers",
-            "type": "array"
-          },
           "version": {
             "maxLength": 64,
             "title": "Version",
@@ -1397,7 +1521,6 @@
         "required": [
           "version",
           "protocol_version",
-          "providers",
           "instance_id"
         ],
         "title": "SessionRequest",
@@ -1527,6 +1650,10 @@
             ],
             "title": "Email"
           },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/GroupRef"
@@ -1542,9 +1669,31 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
           "locked": {
             "title": "Locked",
             "type": "boolean"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "name": {
             "title": "Name",
@@ -1571,6 +1720,9 @@
           "username",
           "contact_id",
           "name",
+          "first_name",
+          "middle_name",
+          "last_name",
           "email",
           "phones",
           "is_active",
@@ -1583,7 +1735,7 @@
         "type": "object"
       },
       "UserUpdate": {
-        "description": "Omitted fields stay as they are; an explicit ``email: null`` clears the email.\n\n``username``, ``is_active`` and ``group_ids`` are checked against ``users`` permissions;\n``name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.",
+        "description": "Omitted fields stay as they are; an explicit ``email: null`` clears the email.\n\n``username``, ``is_active`` and ``group_ids`` are checked against ``users`` permissions;\n``first_name``, ``middle_name``, ``last_name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.",
         "properties": {
           "email": {
             "anyOf": [
@@ -1596,6 +1748,19 @@
               }
             ],
             "title": "Email"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
           },
           "group_ids": {
             "anyOf": [
@@ -1622,18 +1787,29 @@
             ],
             "title": "Is Active"
           },
-          "name": {
+          "last_name": {
             "anyOf": [
               {
-                "maxLength": 255,
-                "minLength": 1,
+                "maxLength": 100,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Last Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
           },
           "phones": {
             "anyOf": [
@@ -3801,7 +3977,7 @@
     },
     "/worker/session": {
       "post": {
-        "description": "The handshake and heartbeat: records what the worker is, and tells it which devices to run.",
+        "description": "The handshake and heartbeat: records what the worker is, and tells it which device it serves.",
         "operationId": "session_worker_session_post",
         "requestBody": {
           "content": {

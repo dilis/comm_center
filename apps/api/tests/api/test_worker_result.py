@@ -5,13 +5,12 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.devices import register_device
-from app.worker_accounts import create_worker
 from tests.api.worker_helpers import (
     PHONE,
     lease_row,
     make_worker_with_device,
     message_row,
-    sign_in,
+    other_worker,
 )
 from tests.db.helpers import make_contact, make_message, make_phone
 
@@ -86,8 +85,7 @@ def test_a_second_result_is_a_conflict(client, held):
 
 def test_another_worker_cannot_report_it(client, db, held):
     _, _, mid = held
-    _, secret = create_worker(db, "w2")
-    other = sign_in(client, "w2", secret)
+    other, _ = other_worker(client, db)
     assert result(client, other, mid, status="sent").status_code == 409
 
 
@@ -126,13 +124,8 @@ def test_extend_pushes_the_lease_forward(client, db, held):
 
 def test_extend_needs_a_lease_this_worker_holds(client, db, held):
     headers, _, mid = held
-    _, secret = create_worker(db, "w2")
-    assert (
-        client.post(
-            f"/worker/messages/{mid}/extend", headers=sign_in(client, "w2", secret)
-        ).status_code
-        == 409
-    )
+    other, _ = other_worker(client, db)
+    assert client.post(f"/worker/messages/{mid}/extend", headers=other).status_code == 409
     result(client, headers, mid, status="sent")
     assert client.post(f"/worker/messages/{mid}/extend", headers=headers).status_code == 409
 

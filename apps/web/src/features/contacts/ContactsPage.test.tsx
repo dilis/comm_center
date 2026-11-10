@@ -6,12 +6,12 @@ import { server } from "@/test/server";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const ana = {
-  id: 10, name: "Ana Cruz", type: "person", email: "ana@example.com", notes: null, owner_id: 1, user_id: null,
+  id: 10, name: "Ana Cruz", first_name: "Ana", middle_name: null, last_name: "Cruz", type: "person", email: "ana@example.com", notes: null, owner_id: 1, user_id: null,
   phones: [{ phone: "+639171234567", label: "mobile", is_primary: true }],
   created_at: "2026-11-01T08:00:00", updated_at: "2026-11-01T08:00:00",
 };
-const acme = { ...ana, id: 11, name: "Acme Corp", type: "entity", email: null, phones: [] };
-const staff = { ...ana, id: 12, name: "Sam Staff", user_id: 5, owner_id: 2 };
+const acme = { ...ana, id: 11, name: "Acme Corp", first_name: "Acme Corp", middle_name: null, last_name: null, type: "entity", email: null, phones: [] };
+const staff = { ...ana, id: 12, name: "Sam Staff", first_name: "Sam", last_name: "Staff", user_id: 5, owner_id: 2 };
 
 let requests: URL[];
 function listContacts(items: unknown[] = [ana, acme, staff], total = items.length) {
@@ -96,7 +96,7 @@ describe("list", () => {
   });
 
   test("renders names and notes as text, never as markup", async () => {
-    listContacts([{ ...ana, name: "<img src=x onerror=alert(1)>", phones: [] }]);
+    listContacts([{ ...ana, name: "<img src=x onerror=alert(1)>", first_name: "<img src=x onerror=alert(1)>", last_name: null, phones: [] }]);
     await open();
     expect(await screen.findByText("<img src=x onerror=alert(1)>")).toBeInTheDocument();
     expect(document.querySelector("img")).toBeNull();
@@ -141,7 +141,9 @@ describe("create", () => {
     const before = requests.length;
     await userEvent.click(screen.getByRole("button", { name: "New contact" }));
     const dialog = await screen.findByRole("dialog", { name: "New contact" });
-    await userEvent.type(within(dialog).getByLabelText("Name"), "Ana Cruz");
+    await userEvent.type(within(dialog).getByLabelText("First name"), "Ana");
+    await userEvent.type(within(dialog).getByLabelText("Middle name"), "Maria");
+    await userEvent.type(within(dialog).getByLabelText("Last name"), "Cruz");
     await userEvent.type(within(dialog).getByLabelText("Email"), "ana@example.com");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add phone" }));
     await userEvent.type(within(dialog).getByLabelText("Phone 1"), "0917 123 4567");
@@ -150,7 +152,7 @@ describe("create", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(body).toEqual({
-      name: "Ana Cruz", type: "person", email: "ana@example.com", notes: null,
+      first_name: "Ana", middle_name: "Maria", last_name: "Cruz", type: "person", email: "ana@example.com", notes: null,
       phones: [{ phone: "0917 123 4567", label: "mobile", is_primary: true }],
     });
     await waitFor(() => expect(requests.length).toBeGreaterThan(before));
@@ -164,8 +166,8 @@ describe("create", () => {
     await userEvent.click(screen.getByRole("button", { name: "New contact" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    expect(await within(dialog).findByText("Enter a name")).toBeInTheDocument();
-    await userEvent.type(within(dialog).getByLabelText("Name"), "X");
+    expect(await within(dialog).findByText("Enter a first name")).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText("First name"), "X");
     await userEvent.type(within(dialog).getByLabelText("Email"), "not-an-email");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await within(dialog).findByText("Enter a valid email")).toBeInTheDocument();
@@ -178,7 +180,7 @@ describe("create", () => {
     await open();
     await userEvent.click(screen.getByRole("button", { name: "New contact" }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Name"), "Dup");
+    await userEvent.type(within(dialog).getByLabelText("First name"), "Dup");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add phone" }));
     await userEvent.type(within(dialog).getByLabelText("Phone 1"), "0917 123 4567");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -210,15 +212,17 @@ describe("edit", () => {
     await open();
     await userEvent.click(await screen.findByRole("button", { name: "Edit Ana Cruz" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
-    expect(within(dialog).getByLabelText("Name")).toHaveValue("Ana Cruz");
+    expect(within(dialog).getByLabelText("First name")).toHaveValue("Ana");
+    expect(within(dialog).getByLabelText("Middle name")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Last name")).toHaveValue("Cruz");
     expect(within(dialog).getByLabelText("Phone 1")).toHaveValue("+639171234567");
     expect(within(dialog).getByLabelText("Primary 1")).toBeChecked();
-    await userEvent.clear(within(dialog).getByLabelText("Name"));
-    await userEvent.type(within(dialog).getByLabelText("Name"), "Ana C.");
+    await userEvent.clear(within(dialog).getByLabelText("Last name"));
+    await userEvent.type(within(dialog).getByLabelText("Last name"), "Cruz-Lim");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(body).toEqual({
-      name: "Ana C.", type: "person", email: "ana@example.com", notes: null,
+      first_name: "Ana", middle_name: null, last_name: "Cruz-Lim", type: "person", email: "ana@example.com", notes: null,
       phones: [{ phone: "+639171234567", label: "mobile", is_primary: true }],
     });
   });

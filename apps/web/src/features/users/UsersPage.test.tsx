@@ -6,7 +6,7 @@ import { server } from "@/test/server";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const user = (id: number, username: string, over: Record<string, unknown> = {}) => ({
-  id, username, contact_id: 100 + id, name: `${username} Name`, email: `${username}@example.com`, phones: [],
+  id, username, contact_id: 100 + id, name: `${username} Name`, first_name: username, middle_name: null, last_name: "Name", email: `${username}@example.com`, phones: [],
   is_active: true, owner_id: 1, groups: [{ id: 3, name: "agent" }], locked: false, created_at: "2026-11-01T08:00:00", ...over,
 });
 const me = user(1, "tester", { groups: [{ id: 1, name: "admin" }] }); // meFor() is user id 1
@@ -100,14 +100,15 @@ describe("create", () => {
     const dialog = await openCreate();
     await userEvent.type(within(dialog).getByLabelText("Username"), "newbie");
     await userEvent.type(within(dialog).getByLabelText("Password"), "a long enough pass");
-    await userEvent.type(within(dialog).getByLabelText("Full name"), "New Bie");
+    await userEvent.type(within(dialog).getByLabelText("First name"), "New");
+    await userEvent.type(within(dialog).getByLabelText("Last name"), "Bie");
     await userEvent.type(within(dialog).getByLabelText("Email"), "n@example.com");
     await userEvent.click(await within(dialog).findByRole("checkbox", { name: /agent/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Create user" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(body).toEqual({
       username: "newbie", password: "a long enough pass", is_active: true, group_ids: [3],
-      contact: { name: "New Bie", email: "n@example.com", type: "person", phones: [] },
+      contact: { first_name: "New", middle_name: null, last_name: "Bie", email: "n@example.com", type: "person", phones: [] },
     });
   });
 
@@ -135,7 +136,7 @@ describe("create", () => {
     const dialog = await openCreate();
     await userEvent.click(within(dialog).getByRole("button", { name: "Create user" }));
     expect(await within(dialog).findByText("Enter a username")).toBeInTheDocument();
-    expect(within(dialog).getByText("Enter a full name")).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter a first name")).toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText("Password"), "short");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create user" }));
     expect(await within(dialog).findByText("At least 10 characters")).toBeInTheDocument();
@@ -167,7 +168,7 @@ describe("create", () => {
     const dialog = await openCreate();
     await userEvent.type(within(dialog).getByLabelText("Username"), "bea");
     await userEvent.type(within(dialog).getByLabelText("Password"), "a long enough pass");
-    await userEvent.type(within(dialog).getByLabelText("Full name"), "Bea");
+    await userEvent.type(within(dialog).getByLabelText("First name"), "Bea");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create user" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("username already in use");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -187,7 +188,8 @@ describe("edit", () => {
     server.use(http.put("*/api/users/2", async ({ request }) => ((body = await request.json()), HttpResponse.json(bea))));
     const dialog = await openEdit("bea");
     expect(within(dialog).getByLabelText("Username")).toHaveValue("bea");
-    expect(within(dialog).getByLabelText("Full name")).toHaveValue("bea Name");
+    expect(within(dialog).getByLabelText("First name")).toHaveValue("bea");
+    expect(within(dialog).getByLabelText("Last name")).toHaveValue("Name");
     expect(await within(dialog).findByRole("checkbox", { name: /agent/ })).toBeChecked();
     await userEvent.clear(within(dialog).getByLabelText("Username"));
     await userEvent.type(within(dialog).getByLabelText("Username"), "bea2");
@@ -203,12 +205,12 @@ describe("edit", () => {
     await userEvent.click(await within(dialog).findByRole("checkbox", { name: /agent/ }));
     await userEvent.click(within(dialog).getByRole("checkbox", { name: /contacts_viewer/ }));
     await userEvent.click(within(dialog).getByLabelText("Active"));
-    await userEvent.clear(within(dialog).getByLabelText("Full name"));
-    await userEvent.type(within(dialog).getByLabelText("Full name"), "Beatriz");
+    await userEvent.clear(within(dialog).getByLabelText("First name"));
+    await userEvent.type(within(dialog).getByLabelText("First name"), "Beatriz");
     await userEvent.clear(within(dialog).getByLabelText("Email"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(body).toEqual({ is_active: false, group_ids: [2], name: "Beatriz", email: null });
+    expect(body).toEqual({ is_active: false, group_ids: [2], first_name: "Beatriz", email: null });
   });
 
   test("you cannot deactivate yourself", async () => {
@@ -218,7 +220,7 @@ describe("edit", () => {
 
   test("name and email are editable only with contacts:update", async () => {
     const dialog = await openEdit("bea", ["users:read_all", "users:update", "groups:read_all"]);
-    expect(within(dialog).queryByLabelText("Full name")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("First name")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Email")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("Username")).toBeInTheDocument();
   });

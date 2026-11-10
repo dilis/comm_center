@@ -21,7 +21,16 @@ class Contact(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (Index("ix_contacts_owner_id_deleted_at", "owner_id", "deleted_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # A person has a first name, maybe a middle name and a last name. An entity (a device, a
+    # business) and a contact auto-created from an unknown number keep their whole name in
+    # ``first_name``.
+    first_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    middle_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    # Generated (read-only): the parts joined by single spaces, for display, search and sorting.
+    name: Mapped[str] = mapped_column(
+        String(512), Computed("CONCAT_WS(' ', first_name, middle_name, last_name)", persisted=True)
+    )
     type: Mapped[str] = mapped_column(
         Enum("person", "entity", name="contact_type"), nullable=False, server_default="person"
     )
@@ -62,7 +71,7 @@ class User(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
             name="agent_direction_iff_system",
         ),
         CheckConstraint(
-            "is_system = 0 OR (login_enabled = 0 AND password_hash IS NULL)",
+            "is_system = 0 OR login_enabled = 0",
             name="system_agent_cannot_log_in",
         ),
         CheckConstraint("is_system = 0 OR deleted_at IS NULL", name="system_agent_not_deletable"),

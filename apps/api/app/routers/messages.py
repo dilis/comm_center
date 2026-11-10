@@ -33,6 +33,8 @@ class MessageOut(BaseModel):
     direction: Direction  # computed from the owner, never stored
     contact_id: int
     contact_name: str
+    contact_first_name: str  # with contact_last_name, what {{first_name}} / {{last_name}} become
+    contact_last_name: str | None
     phone_number: str  # E.164 snapshot, set once
     content: str  # untrusted text: clients must escape it
     status: Status
@@ -105,14 +107,15 @@ def to_out(db: Session, messages: list[Message], viewer_id: int) -> list[Message
             select(User).where(User.id.in_({m.owner_id for m in messages})), execution_options=keep
         )
     }
-    names = dict(
-        db.execute(
-            select(Contact.id, Contact.name).where(
+    contacts = {
+        c.id: c
+        for c in db.scalars(
+            select(Contact).where(
                 Contact.id.in_({m.contact_id for m in messages} | {u.contact_id for u in owners.values()})
             ),
             execution_options=keep,
-        ).all()
-    )
+        )
+    }
     device_by_agent = dict(
         db.execute(
             select(GsmDevice.agent_user_id, GsmDevice.id).where(
@@ -136,8 +139,10 @@ def to_out(db: Session, messages: list[Message], viewer_id: int) -> list[Message
         out.append(
             MessageOut(
                 id=m.id, channel=m.channel, direction=direction, contact_id=m.contact_id,
-                contact_name=names[m.contact_id], phone_number=m.phone_number, content=m.content,
-                status=m.status, owner_id=m.owner_id, owner_name=names[owner.contact_id],
+                contact_name=contacts[m.contact_id].name,
+                contact_first_name=contacts[m.contact_id].first_name,
+                contact_last_name=contacts[m.contact_id].last_name, phone_number=m.phone_number, content=m.content,
+                status=m.status, owner_id=m.owner_id, owner_name=contacts[owner.contact_id].name,
                 unread=direction == "inbound" and m.id not in read_ids,
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
@@ -172,9 +177,14 @@ def by_direction(stmt, direction: Literal["all", "sent", "received"]):
     return stmt
 
 
-def personalize(template: str, name: str) -> str | None:
+def personalize(template: str, contact: Contact) -> str | None:
     """The text for one recipient, or None if their name makes it longer than a message may be."""
-    text = render(template, {"name": name})
+    values = {
+        "name": contact.name,
+        "first_name": contact.first_name,
+        "last_name": contact.last_name or "",
+    }
+    text = render(template, values)
     return text if len(text) <= MAX_CONTENT_LENGTH else None
 
 
@@ -257,7 +267,7 @@ def send_message(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, "contact has no phone number"
             )
-    text = personalize(body.content, contact.name)
+    text = personalize(body.content, contact)
     if text is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
     message = Message(
@@ -283,7 +293,7 @@ def send_bulk(
     queued together in one transaction, in the order given."""
     ids = list(dict.fromkeys(body.contact_ids))  # each contact once, order kept
     contacts = {
-        c.id: c.name
+        c.id: c
         for c in db.scalars(scope(select(Contact).where(Contact.id.in_(ids)), caller, "contacts"))
     }
     phones: dict[int, list[ContactPhone]] = {}
@@ -345,10 +355,10 @@ def reply_to_message(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "only received messages can be replied to"
         )
-    name = db.scalar(
-        select(Contact.name).where(Contact.id == original.contact_id), execution_options=keep
-    )
-    text = personalize(body.content, name)
+    recipient = db.scalars(
+        select(Contact).where(Contact.id == original.contact_id), execution_options=keep
+    ).one()
+    text = personalize(body.content, recipient)
     if text is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_LONG_WITH_NAME)
     message = Message(
@@ -358,7 +368,7 @@ def reply_to_message(
     db.add(message)
     mark_read(db, caller.id, original.id)  # answering it means it was read
     db.flush()
-    record_activity(db, request, caller.id, "reply", "message", message.id, f"Replied to message {original.id} from {name}")
+    record_activity(db, request, caller.id, "reply", "message", message.id, f"Replied to message {original.id} from {recipient.name}")
     db.commit()
     return to_out(db, [message], caller.id)[0]
 

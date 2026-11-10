@@ -223,7 +223,7 @@ def supervisor(server):
     made = {}
 
     def make_worker(device):
-        if device["provider"] != "fake":
+        if device["name"] == "unrunnable":
             raise ValueError("cannot run it")
         made[device["id"]] = FakeProvider()
         return DeviceWorker(
@@ -234,7 +234,7 @@ def supervisor(server):
             sleep=lambda s: None,
         )
 
-    sup = Supervisor(make_api(server), make_worker, ["fake"], stop, interval=0.01)
+    sup = Supervisor(make_api(server), make_worker, stop, interval=0.01)
     sup.made = made
     yield sup, stop
     stop.set()
@@ -242,21 +242,15 @@ def supervisor(server):
     sup.join(timeout=10)
 
 
-def device(i, provider="fake"):
-    return {
-        "id": i,
-        "name": f"d{i}",
-        "provider": provider,
-        "phone_number": "+639170000000",
-        "config": {},
-    }
+def device(i, name=None):
+    return {"id": i, "name": name or f"d{i}", "phone_number": "+639170000000"}
 
 
 def test_it_starts_a_loop_per_assigned_device_and_states_what_it_is(server, supervisor):
     sup, _ = supervisor
     server.devices = [device(1), device(2)]
     assert sorted(sup.sync()) == [1, 2] and sup.sync() == []
-    assert server.sessions[0]["providers"] == ["fake"]
+    assert "providers" not in server.sessions[0]
     assert server.sessions[0]["instance_id"] == sup.instance_id
     assert {s["instance_id"] for s in server.sessions} == {
         sup.instance_id
@@ -283,13 +277,13 @@ def test_a_device_taken_away_is_stopped_and_not_restarted(server, supervisor):
 
 def test_a_device_it_cannot_run_is_skipped_once(server, supervisor):
     sup, _ = supervisor
-    server.devices = [device(1), device(2, "gsm_modem")]
+    server.devices = [device(1), device(2, "unrunnable")]
     assert sup.sync() == [1] and sup.sync() == []
 
 
 def test_a_new_instance_each_time_the_worker_starts(server, supervisor):
     first, _ = supervisor
-    other = Supervisor(make_api(server), lambda d: None, ["fake"], threading.Event(), 0.01)
+    other = Supervisor(make_api(server), lambda d: None, threading.Event(), 0.01)
     assert first.instance_id != other.instance_id
 
 

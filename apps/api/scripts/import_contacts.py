@@ -21,11 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Contact, ContactPhone, User
+from app.names import split_name
 from app.phones import normalize_e164
 
 SHEET = "Details"
 NAME_COLUMN = "Customer name"
 PHONE_COLUMN = "Customer phone"
+EMAIL_COLUMN = "Customer email"  # optional; read for the CSV export, not used by this importer
 MAX_NAME_LENGTH = 255  # the width of contacts.name
 
 
@@ -38,6 +40,7 @@ class Row:
     line: int  # the row number in the spreadsheet
     name: object
     phone: object
+    email: object = None
 
 
 @dataclass
@@ -45,6 +48,7 @@ class PlannedContact:
     phone: str
     name: str
     lines: list[int]
+    emails: list[str] = field(default_factory=list)  # distinct, in order of appearance
     named: bool = True  # False while the name is only the number, used as a stand-in
 
 
@@ -119,6 +123,13 @@ def clean_name(raw: object) -> str:
     return " ".join(str(raw).split())[:MAX_NAME_LENGTH]
 
 
+def add_email(planned: PlannedContact, raw: object) -> None:
+    """Remember a row's email (trimmed, lower case) once per contact."""
+    email = "" if raw is None else str(raw).strip().casefold()
+    if email and email not in planned.emails:
+        planned.emails.append(email)
+
+
 def plan(rows: list[Row]) -> Plan:
     """Decide what to import: one contact per valid number, invalid rows set aside."""
     result = Plan()
@@ -135,9 +146,11 @@ def plan(rows: list[Row]) -> Plan:
             planned = by_phone[phone] = PlannedContact(
                 phone, name or phone, [row.line], named=bool(name)
             )
+            add_email(planned, row.email)
             result.contacts.append(planned)
             continue
         planned.lines.append(row.line)
+        add_email(planned, row.email)
         if not name:
             continue
         if not planned.named:  # the first row had no name; take this one
@@ -175,12 +188,15 @@ def read_rows(path: Path) -> list[Row]:
                 )
             columns.append(lookup[wanted.casefold()])
         name_at, phone_at = columns
+        email_at = lookup.get(EMAIL_COLUMN.casefold())
         result = []
         for line, cells in enumerate(rows, start=2):
             if all(c is None or str(c).strip() == "" for c in cells):
                 continue
-            padded = list(cells) + [None] * (max(columns) + 1 - len(cells))
-            result.append(Row(line, padded[name_at], padded[phone_at]))
+            padded = list(cells) + [None] * (max([*columns, email_at or 0]) + 1 - len(cells))
+            result.append(
+                Row(line, padded[name_at], padded[phone_at], padded[email_at] if email_at is not None else None)
+            )
         return result
     finally:
         workbook.close()
@@ -214,7 +230,11 @@ def apply(db: Session, planned: Plan, owner_id: int) -> Result:
         if item.phone in existing:
             result.existing.append(Existing(item.phone, existing[item.phone]))
             continue
-        contact = Contact(name=item.name, type="person", owner_id=owner_id)
+        # A real name is split into first, middle and last; a stand-in number stays whole.
+        first, middle, last = split_name(item.name) if item.named else (item.name, None, None)
+        contact = Contact(
+            first_name=first, middle_name=middle, last_name=last, type="person", owner_id=owner_id
+        )
         db.add(contact)
         db.flush()
         db.add(ContactPhone(contact_id=contact.id, phone_e164=item.phone, is_primary=True))

@@ -41,7 +41,7 @@ def ingest_message(
     if contact_id is None:
         try:
             with db.begin_nested():
-                contact = Contact(name=number, type="person", owner_id=agent_user_id)
+                contact = Contact(first_name=number, type="person", owner_id=agent_user_id)
                 db.add(contact)
                 db.flush()
                 db.add(ContactPhone(contact_id=contact.id, phone_e164=number, is_primary=True))

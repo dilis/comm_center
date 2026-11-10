@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { api, errorMessage, unwrap } from "@/api/client";
 import type { components } from "@/api/schema";
+import { NameFields, nameBody, nameShape } from "@/components/NameFields";
 import { FieldError } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,7 +17,7 @@ import { Label } from "@/components/ui/label";
 export type Contact = components["schemas"]["ContactOut"];
 
 const schema = z.object({
-  name: z.string().trim().min(1, "Enter a name").max(255, "At most 255 characters"),
+  ...nameShape,
   type: z.enum(["person", "entity"]),
   email: z.string().trim().refine((v) => v === "" || z.email().safeParse(v).success, "Enter a valid email"),
   notes: z.string(),
@@ -35,7 +36,9 @@ export function ContactDialog({ contact, onClose }: { contact?: Contact; onClose
   } = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
-      name: contact?.name ?? "",
+      first_name: contact?.first_name ?? "",
+      middle_name: contact?.middle_name ?? "",
+      last_name: contact?.last_name ?? "",
       type: (contact?.type as Values["type"] | undefined) ?? "person",
       email: contact?.email ?? "",
       notes: contact?.notes ?? "",
@@ -44,11 +47,13 @@ export function ContactDialog({ contact, onClose }: { contact?: Contact; onClose
   });
   const phones = useFieldArray({ control, name: "phones" });
   const watched = watch("phones");
+  const type = watch("type");
 
   const save = useMutation({
     mutationFn: (values: Values) => {
       const body = {
-        name: values.name,
+        // An entity's whole name is its first name.
+        ...(values.type === "entity" ? { first_name: values.first_name, middle_name: null, last_name: null } : nameBody(values)),
         type: values.type,
         email: values.email || null,
         notes: values.notes.trim() || null,
@@ -86,11 +91,14 @@ export function ContactDialog({ contact, onClose }: { contact?: Contact; onClose
             save.mutate(values);
           })}
         >
-          <div className="space-y-1.5">
-            <Label htmlFor="contact-name">Name</Label>
-            <Input id="contact-name" {...register("name")} />
-            <FieldError message={errors.name?.message} />
-          </div>
+          <NameFields
+            idPrefix="contact"
+            single={type === "entity"}
+            first={register("first_name")}
+            middle={register("middle_name")}
+            last={register("last_name")}
+            errors={errors}
+          />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="contact-type">Type</Label>

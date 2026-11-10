@@ -12,13 +12,14 @@ from sqlalchemy.orm import sessionmaker
 from app.db import get_db
 from app.devices import register_device
 from app.main import app
-from app.worker_accounts import create_worker
 from tests.db.conftest import engine, test_db_url  # noqa: F401 - fixtures
 from tests.db.helpers import insert, make_contact, make_phone
 
 pytestmark = pytest.mark.db
 
-WORKER_NAME = "w1"
+DEVICE_NAME = "d1"
+WORKER_NAME = "gsm-d1"  # a worker signs in as its device's agent
+WORKER_SECRET = "a-long-enough-worker-secret"
 
 
 @pytest.fixture
@@ -35,7 +36,6 @@ def session_factory(engine):  # noqa: F811
             "inbound_ref",
             "messages",
             "gsm_device",
-            "worker_account",
             "contact_phone",
             "user_group",
             "login_log",
@@ -61,22 +61,20 @@ def http_app(session_factory):
 
 
 @pytest.fixture
-def worker(session_factory):
-    """The worker account (name ``w1``) and its secret."""
+def device(session_factory):
+    """The device ``d1`` (agent ``gsm-d1``) and, through it, the worker that serves it."""
     with session_factory() as db:
-        row, secret = create_worker(db, WORKER_NAME)
-    return row, secret
+        return register_device(db, DEVICE_NAME, "+639170000000", secret=WORKER_SECRET)
 
 
 @pytest.fixture
-def make_api(http_app, worker):
+def make_api(http_app, device):
     """Build an API client for the worker. Each one has its own HTTP client, as each thread of the
     real worker does."""
-    _, secret = worker
     made = []
 
     def build() -> ApiClient:
-        api = ApiClient(TestClient(app), WORKER_NAME, secret)
+        api = ApiClient(TestClient(app), WORKER_NAME, WORKER_SECRET)
         made.append(api)
         return api
 
@@ -88,18 +86,6 @@ def make_api(http_app, worker):
 @pytest.fixture
 def api(make_api):
     return make_api()
-
-
-@pytest.fixture
-def device(session_factory, worker):
-    with session_factory() as db:
-        return register_device(
-            db,
-            name="d1",
-            serial_port="/dev/ttyUSB0",
-            phone_number="+639170000000",
-            worker=WORKER_NAME,
-        )
 
 
 @pytest.fixture

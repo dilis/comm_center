@@ -15,7 +15,7 @@ def headers(client, alice):
 
 
 def test_update_name_and_email(client, headers):
-    r = client.patch("/auth/me/profile", json={"name": "Alice A", "email": "a@example.com"}, headers=headers)
+    r = client.patch("/auth/me/profile", json={"first_name": "Alice A", "email": "a@example.com"}, headers=headers)
     assert r.status_code == 200 and r.json()["name"] == "Alice A" and r.json()["email"] == "a@example.com"
     r = client.patch("/auth/me/profile", json={"clear_email": True}, headers=headers)
     assert r.json()["email"] is None and r.json()["name"] == "Alice A"
@@ -23,17 +23,17 @@ def test_update_name_and_email(client, headers):
 
 def test_profile_rejects_bad_email_and_blank_name(client, headers):
     assert client.patch("/auth/me/profile", json={"email": "nope"}, headers=headers).status_code == 422
-    assert client.patch("/auth/me/profile", json={"name": ""}, headers=headers).status_code == 422
+    assert client.patch("/auth/me/profile", json={"first_name": ""}, headers=headers).status_code == 422
 
 
 def test_profile_requires_auth(client):
-    assert client.patch("/auth/me/profile", json={"name": "x"}).status_code == 401
+    assert client.patch("/auth/me/profile", json={"first_name": "x"}).status_code == 401
 
 
 def test_self_service_works_without_any_contacts_or_users_permission(client, conn):
     make_login_user(conn, "bare", "messages_agent")  # holds no contacts/users permissions
     h = auth_header(client, "bare")
-    assert client.patch("/auth/me/profile", json={"name": "Bare"}, headers=h).status_code == 200
+    assert client.patch("/auth/me/profile", json={"first_name": "Bare"}, headers=h).status_code == 200
 
 
 def test_replace_phones_normalizes_and_stores(client, headers):

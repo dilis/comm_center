@@ -12,7 +12,7 @@ from tests.db.helpers import (
 
 pytestmark = pytest.mark.db
 
-NEW = {"username": "newbie", "password": "a long enough pass", "contact": {"name": "New Bie"}}
+NEW = {"username": "newbie", "password": "a long enough pass", "contact": {"first_name": "New Bie"}}
 
 
 @pytest.fixture
@@ -42,7 +42,8 @@ def test_create_user_with_new_contact_groups_and_login(client, h, boss, conn):
         h,
         group_ids=[group_id(conn, "agent")],
         contact={
-            "name": "New Bie",
+            "first_name": "New",
+            "last_name": "Bie",
             "email": "n@example.com",
             "phones": [{"phone": "09171234567", "is_primary": True}],
         },
@@ -86,7 +87,7 @@ def test_create_needs_exactly_one_of_contact_and_contact_id(client, h, conn):
     cid = make_contact(conn, "X")
     base = {"username": "u1", "password": NEW["password"]}
     assert client.post("/users", json=base, headers=h).status_code == 422
-    both = {**base, "contact_id": cid, "contact": {"name": "Y"}}
+    both = {**base, "contact_id": cid, "contact": {"first_name": "Y"}}
     assert client.post("/users", json=both, headers=h).status_code == 422
 
 
@@ -100,9 +101,9 @@ def test_create_validation(client, h):
 
 def test_duplicate_username_is_409_and_reusable_after_soft_delete(client, h):
     uid = create(client, h).json()["id"]
-    assert create(client, h, contact={"name": "Other"}).status_code == 409
+    assert create(client, h, contact={"first_name": "Other"}).status_code == 409
     assert client.delete(f"/users/{uid}", headers=h).status_code == 204
-    assert create(client, h, contact={"name": "Other"}).status_code == 201
+    assert create(client, h, contact={"first_name": "Other"}).status_code == 201
 
 
 def test_contact_already_linked_is_409(client, h, conn):
@@ -118,13 +119,13 @@ def test_contact_already_linked_is_409(client, h, conn):
 def test_failed_create_leaves_no_orphan_contact(client, h, conn):
     create(client, h)
     before = conn.execute(text("SELECT COUNT(*) FROM contacts")).scalar_one()
-    assert create(client, h, contact={"name": "Orphan?"}).status_code == 409  # duplicate username
+    assert create(client, h, contact={"first_name": "Orphan?"}).status_code == 409  # duplicate username
     assert conn.execute(text("SELECT COUNT(*) FROM contacts")).scalar_one() == before
 
 
 def test_phone_conflict_on_create_is_409(client, h, conn):
     make_phone(conn, make_contact(conn, "Holder"), "+639171234567")
-    r = create(client, h, contact={"name": "N", "phones": [{"phone": "+639171234567"}]})
+    r = create(client, h, contact={"first_name": "N", "phones": [{"phone": "+639171234567"}]})
     assert r.status_code == 409
 
 
@@ -145,7 +146,7 @@ def test_cannot_assign_group_beyond_own_permissions(client, conn):
     h = auth_header(client, "limited")
     assert create(client, h, group_ids=[group_id(conn, "contacts_viewer")]).status_code == 201
     r = create(
-        client, h, username="u2", contact={"name": "U2"}, group_ids=[group_id(conn, "admin")]
+        client, h, username="u2", contact={"first_name": "U2"}, group_ids=[group_id(conn, "admin")]
     )
     assert r.status_code == 403
     assert client.get("/users?q=u2", headers=h).json()["total"] == 0
@@ -175,7 +176,7 @@ def test_roles_without_users_create_are_forbidden(client, conn, role):
 def test_list_hides_system_agents_and_paginates(client, h, conn):
     make_inbound_agent(conn)
     for n in ("alpha", "beta", "gamma"):
-        create(client, h, username=n, contact={"name": n.title()})
+        create(client, h, username=n, contact={"first_name": n.title()})
     body = client.get("/users?page_size=100", headers=h).json()
     names = [u["username"] for u in body["items"]]
     assert "system" not in names and "notification" not in names and "gsm-test" not in names
@@ -185,8 +186,8 @@ def test_list_hides_system_agents_and_paginates(client, h, conn):
 
 
 def test_list_search_and_active_filter_and_sort(client, h):
-    create(client, h, username="zoe", contact={"name": "Zoë Quill"})
-    uid = create(client, h, username="mia", contact={"name": "Mia"}).json()["id"]
+    create(client, h, username="zoe", contact={"first_name": "Zoë Quill"})
+    uid = create(client, h, username="mia", contact={"first_name": "Mia"}).json()["id"]
     client.put(f"/users/{uid}", json={"is_active": False}, headers=h)
     q = lambda s: [u["username"] for u in client.get(f"/users?{s}", headers=h).json()["items"]]
     assert q("q=Quill") == ["zoe"] and q("q=zo") == ["zoe"]
@@ -268,7 +269,7 @@ def test_update_omitted_fields_unchanged_and_empty_groups_clears(client, h, conn
 
 def test_update_duplicate_username_409(client, h):
     create(client, h, username="taken")
-    uid = create(client, h, username="free", contact={"name": "F"}).json()["id"]
+    uid = create(client, h, username="free", contact={"first_name": "F"}).json()["id"]
     assert client.put(f"/users/{uid}", json={"username": "taken"}, headers=h).status_code == 409
 
 
@@ -294,7 +295,7 @@ def test_update_contact_fields_goes_through_contacts_permission(client, h, conn)
     r = client.put(
         f"/users/{uid}",
         headers=h,
-        json={"name": "Renamed", "email": "r@example.com", "phones": [{"phone": "+639171234567"}]},
+        json={"first_name": "Renamed", "email": "r@example.com", "phones": [{"phone": "+639171234567"}]},
     )
     assert r.status_code == 200, r.text
     assert (r.json()["name"], r.json()["email"], r.json()["phones"][0]["phone"]) == (
@@ -307,7 +308,7 @@ def test_update_contact_fields_goes_through_contacts_permission(client, h, conn)
     make_login_user(conn, "ua", "users_admin")
     ha = auth_header(client, "ua")
     assert client.put(f"/users/{uid}", json={"is_active": True}, headers=ha).status_code == 200
-    assert client.put(f"/users/{uid}", json={"name": "Hacked"}, headers=ha).status_code == 403
+    assert client.put(f"/users/{uid}", json={"first_name": "Hacked"}, headers=ha).status_code == 403
 
 
 def test_cannot_deactivate_or_delete_yourself(client, h, boss):

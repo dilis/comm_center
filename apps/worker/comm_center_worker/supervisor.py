@@ -1,4 +1,4 @@
-"""Keeps one loop running per device the API assigns to this worker, picking up changes."""
+"""Keeps a loop running for the device the API says this worker serves, picking up changes."""
 
 import logging
 import threading
@@ -17,13 +17,11 @@ class Supervisor:
         self,
         api: ApiClient,
         make_worker: Callable[[dict], DeviceWorker],
-        providers: list[str],
         stop: threading.Event,
         interval: float,
     ) -> None:
         self.api = api
         self.make_worker = make_worker
-        self.providers = providers  # the provider types this worker can run
         self.stop = stop
         self.interval = interval
         # Told to the API with every session: the same one is a heartbeat, a new one a restart.
@@ -37,9 +35,7 @@ class Supervisor:
     def sync(self) -> list[int]:
         """Ask the API which devices are ours (this is also the heartbeat). Start a loop for each
         new one and stop the loop of any device no longer assigned. Returns the new device ids."""
-        session = self.api.session(
-            WORKER_VERSION, self.providers, self.instance_id, PROTOCOL_VERSION
-        )
+        session = self.api.session(WORKER_VERSION, self.instance_id, PROTOCOL_VERSION)
         devices = {d["id"]: d for d in session["devices"]}
         for device_id, (_, stop_loop) in list(self._loops.items()):
             if device_id not in devices:

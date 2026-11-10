@@ -3,8 +3,8 @@ import pytest
 from app.templating import SUPPORTED, UnknownPlaceholders, render, validate
 
 
-def test_name_is_the_only_placeholder_for_now():
-    assert SUPPORTED == ("name",)
+def test_the_supported_placeholders():
+    assert SUPPORTED == ("name", "first_name", "last_name")
 
 
 @pytest.mark.parametrize(
@@ -42,7 +42,7 @@ def test_valid_templates_pass(template):
     [
         ("Hi {{nam}}", ["nam"]),
         ("Hi {{Name}}", ["Name"]),  # placeholders are lowercase
-        ("Hi {{first_name}} and {{name}}", ["first_name"]),
+        ("Hi {{nickname}} and {{name}}", ["nickname"]),
         ("{{ }}", [""]),
         ("{{}}", [""]),
         ("{{foo}} {{bar}} {{foo}}", ["foo", "bar"]),  # each once, in order of appearance
@@ -53,3 +53,9 @@ def test_unknown_placeholders_are_rejected_not_sent_as_text(template, bad):
         validate(template)
     assert caught.value.names == bad
     assert "name" in str(caught.value)  # says what is supported
+
+
+def test_first_and_last_name_fill_in_and_a_missing_last_name_is_empty():
+    values = {"name": "Ana Maria Cruz", "first_name": "Ana", "last_name": "Cruz"}
+    assert render("{{first_name}} / {{last_name}} / {{name}}", values) == "Ana / Cruz / Ana Maria Cruz"
+    assert render("Hi {{first_name}}{{last_name}}.", {"first_name": "Ana", "last_name": ""}) == "Hi Ana."

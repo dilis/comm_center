@@ -50,8 +50,8 @@ def make(api: FakeApi, clock=lambda: 0.0) -> ApiClient:
 def test_it_signs_in_once_and_reuses_the_token():
     api = FakeApi({("POST", "/worker/session"): httpx.Response(200, json={"devices": []})})
     client = make(api)
-    client.session("0.1", ["fake"], "inst")
-    client.session("0.1", ["fake"], "inst")
+    client.session("0.1", "inst")
+    client.session("0.1", "inst")
     assert api.tokens_issued == 1
     assert {auth for (_, auth) in api.calls if auth} == {"Bearer tok1"}
 
@@ -60,9 +60,9 @@ def test_it_signs_in_again_before_the_token_expires():
     now = {"t": 0.0}
     api = FakeApi({("POST", "/worker/session"): httpx.Response(200, json={"devices": []})})
     client = make(api, clock=lambda: now["t"])
-    client.session("0.1", ["fake"], "inst")
+    client.session("0.1", "inst")
     now["t"] = 900 - 10  # inside the safety margin
-    client.session("0.1", ["fake"], "inst")
+    client.session("0.1", "inst")
     assert api.tokens_issued == 2
 
 
@@ -75,7 +75,7 @@ def test_a_rejected_token_triggers_one_new_sign_in_and_a_retry():
             ]
         }
     )
-    assert make(api).session("0.1", ["fake"], "inst") == {"devices": []}
+    assert make(api).session("0.1", "inst") == {"devices": []}
     assert api.tokens_issued == 2
 
 
@@ -87,7 +87,7 @@ def test_bad_credentials_are_an_error_not_a_loop():
         httpx.Client(base_url="http://api", transport=httpx.MockTransport(deny)), "w", "x"
     )
     with pytest.raises(ApiError, match="invalid credentials"):
-        client.session("0.1", ["fake"], "inst")
+        client.session("0.1", "inst")
 
 
 def test_network_failures_and_server_errors_mean_the_api_is_unavailable():
@@ -98,10 +98,10 @@ def test_network_failures_and_server_errors_mean_the_api_is_unavailable():
         httpx.Client(base_url="http://api", transport=httpx.MockTransport(down)), "w", "x"
     )
     with pytest.raises(ApiUnavailable):
-        client.session("0.1", ["fake"], "inst")
+        client.session("0.1", "inst")
     api = FakeApi({("POST", "/worker/session"): httpx.Response(503)})
     with pytest.raises(ApiUnavailable):
-        make(api).session("0.1", ["fake"], "inst")
+        make(api).session("0.1", "inst")
 
 
 def test_a_refused_request_is_an_api_error_with_the_servers_reason():
@@ -113,7 +113,7 @@ def test_a_refused_request_is_an_api_error_with_the_servers_reason():
         }
     )
     with pytest.raises(ApiError, match="protocol"):
-        make(api).session("0.1", ["fake"], "inst")
+        make(api).session("0.1", "inst")
 
 
 def test_claim_returns_the_message_and_its_lease():

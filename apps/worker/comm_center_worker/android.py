@@ -16,7 +16,6 @@ device as ``error`` when it is not.
 """
 
 import logging
-from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 import httpx
@@ -89,27 +88,21 @@ class AndroidGatewayProvider:
         self._client.close()
 
 
-def from_device(
-    device: Mapping,
-    env: Mapping[str, str],
+def from_config(
+    base_url: str,
+    username: str,
+    password: str,
     *,
     timeout: float,
     transport: httpx.BaseTransport | None = None,
 ) -> AndroidGatewayProvider:
-    """Build the provider for a device the API assigned. The device's config holds the phone's
-    address and the *names* of the environment variables with its login (``username_ref``,
-    ``password_ref``); the login itself never leaves this machine. Raises ``ValueError`` saying what
-    is missing."""
-    config = device.get("config") or {}
-    for key in ("base_url", "username_ref", "password_ref"):
-        if not config.get(key):
-            raise ValueError(f"device {device.get('name')!r}: config needs {key!r}")
-    login = []
-    for key in ("username_ref", "password_ref"):
-        name = config[key]
-        if not env.get(name):
-            raise ValueError(f"device {device.get('name')!r}: the variable {name} is not set")
-        login.append(env[name])
-    return AndroidGatewayProvider(
-        config["base_url"], login[0], login[1], timeout=timeout, transport=transport
-    )
+    """Build the provider from this worker's own settings (the phone's address and its login, which
+    never leave this machine). Raises ``ValueError`` naming what is missing."""
+    for name, value in (
+        ("WORKER_ANDROID_BASE_URL", base_url),
+        ("WORKER_ANDROID_USERNAME", username),
+        ("WORKER_ANDROID_PASSWORD", password),
+    ):
+        if not value:
+            raise ValueError(f"the android provider needs {name}")
+    return AndroidGatewayProvider(base_url, username, password, timeout=timeout, transport=transport)

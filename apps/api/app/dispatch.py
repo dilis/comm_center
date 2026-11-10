@@ -6,12 +6,12 @@ started a new session) is failed for a person to decide, because it may already 
 
 from datetime import timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.clock import utcnow
 from app.config import settings
-from app.models import Message, MessageLease, WorkerAccount
+from app.models import GsmDevice, Message, MessageLease
 
 MAX_ERROR_LENGTH = 1000
 LEASE_EXPIRED = "worker stopped responding while sending; delivery unknown"
@@ -53,17 +53,22 @@ def expire_leases(db: Session) -> int:
     return _fail_leases(db, _lock_leases(db, MessageLease.expires_at < utcnow()), LEASE_EXPIRED)
 
 
-def fail_worker_leases(db: Session, worker_id: int) -> int:
+def fail_device_leases(db: Session, device_id: int) -> int:
     """A worker that opens a new session cannot still be sending what it held before."""
-    return _fail_leases(db, _lock_leases(db, MessageLease.worker_id == worker_id), WORKER_RESTARTED)
+    return _fail_leases(db, _lock_leases(db, MessageLease.device_id == device_id), WORKER_RESTARTED)
 
 
-def claim_next(db: Session, worker: WorkerAccount, device_id: int) -> Message | None:
-    """Take the oldest queued message that no other claimer holds (``FOR UPDATE SKIP LOCKED``),
-    mark it ``sending`` on this device and lease it to the worker. The caller commits."""
+def claim_next(db: Session, device: GsmDevice) -> Message | None:
+    """Take the oldest queued message that no other claimer holds (``FOR UPDATE SKIP LOCKED``) and
+    that this device may send (one meant for another device is skipped), mark it ``sending`` on this
+    device and lease it. The caller commits."""
     message = db.scalars(
         select(Message)
-        .where(Message.status == "queued", Message.channel == "gsm")  # soft-deleted rows excluded
+        .where(
+            Message.status == "queued",  # soft-deleted rows excluded
+            Message.channel == "gsm",
+            or_(Message.gsm_device_id.is_(None), Message.gsm_device_id == device.id),
+        )
         .order_by(Message.created_at, Message.id)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -71,12 +76,11 @@ def claim_next(db: Session, worker: WorkerAccount, device_id: int) -> Message | 
     if message is None:
         return None
     message.status = "sending"
-    message.gsm_device_id = device_id
+    message.gsm_device_id = device.id
     db.add(
         MessageLease(
             message_id=message.id,
-            worker_id=worker.id,
-            device_id=device_id,
+            device_id=device.id,
             expires_at=utcnow() + timedelta(seconds=settings.worker_lease_seconds),
         )
     )
@@ -84,11 +88,11 @@ def claim_next(db: Session, worker: WorkerAccount, device_id: int) -> Message | 
     return message
 
 
-def held_lease(db: Session, worker: WorkerAccount, message_id: int) -> MessageLease | None:
+def held_lease(db: Session, device: GsmDevice, message_id: int) -> MessageLease | None:
     lease = db.scalars(
         select(MessageLease).where(MessageLease.message_id == message_id).with_for_update()
     ).one_or_none()
-    return lease if lease and lease.worker_id == worker.id else None
+    return lease if lease and lease.device_id == device.id else None
 
 
 def finish(db: Session, lease: MessageLease, status: str, error: str | None) -> None:

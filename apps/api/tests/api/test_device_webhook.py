@@ -8,7 +8,6 @@ from sqlalchemy import text
 
 from app import webhooks
 from app.devices import register_device
-from app.worker_accounts import create_worker
 from tests.db.helpers import make_contact, make_message, make_phone
 
 pytestmark = pytest.mark.db
@@ -16,10 +15,7 @@ pytestmark = pytest.mark.db
 
 @pytest.fixture
 def phone(db):
-    create_worker(db, "w1")
-    device = register_device(
-        db, "phone1", "http://10.0.0.5:8080", "+639170000000", provider="android", worker="w1"
-    )
+    device = register_device(db, "phone1", "+639170000000")
     db.commit()
     return device
 
@@ -79,20 +75,17 @@ def test_a_stale_timestamp_is_refused(client, phone, db):
 
 
 def test_the_key_of_another_device_does_not_work(client, db, phone):
-    other = register_device(db, "phone2", "x", "+639170000001", provider="android", worker="w1")
+    other = register_device(db, "phone2", "+639170000001")
     db.commit()
     key_of_other = webhooks.device_key(other.id)
     assert post(client, phone.id, received(), key=key_of_other).status_code == 401
 
 
-def test_an_unknown_or_non_android_device_looks_the_same_as_a_bad_signature(client, db):
-    fake = register_device(db, "plain", "x", "+639170000002")  # provider fake
-    db.commit()
+def test_an_unknown_device_looks_the_same_as_a_bad_signature(client, db, phone):
     unknown = post(client, 999999, received())
-    not_android = post(client, fake.id, received())
-    bad = post(client, fake.id, received(), signature="0" * 64)
-    assert {unknown.status_code, not_android.status_code, bad.status_code} == {401}
-    assert unknown.json() == not_android.json() == bad.json()
+    bad = post(client, phone.id, received(), signature="0" * 64)
+    assert {unknown.status_code, bad.status_code} == {401}
+    assert unknown.json() == bad.json()
 
 
 # --- received messages ---
@@ -219,7 +212,7 @@ def test_sent_events_change_nothing(client, phone, db, sent):
 
 
 def test_a_message_of_another_device_is_left_alone(client, db, conn, phone):
-    other = register_device(db, "phone2", "x", "+639170000001", provider="android", worker="w1")
+    other = register_device(db, "phone2", "+639170000001")
     db.commit()
     cid = make_contact(conn, "Di")
     mid = make_message(conn, cid, status="sent", gsm_device_id=other.id)

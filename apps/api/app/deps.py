@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import security
 from app.authz import AuthUser, effective_permissions
 from app.db import get_db
-from app.models import User, WorkerAccount
+from app.models import GsmDevice, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -49,18 +49,19 @@ def get_current_user(
 def get_current_worker(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
-) -> WorkerAccount:
-    """The worker behind a worker token. User tokens (and the other way round) are refused because
-    the two kinds differ in their ``typ`` claim."""
+) -> GsmDevice:
+    """The device behind a worker token (the worker signed in as the device's agent). User tokens
+    (and the other way round) are refused because the two kinds differ in their ``typ`` claim."""
     if credentials is None:
         raise unauthorized()
     try:
         claims = security.decode_token(credentials.credentials, "worker")
     except security.TokenError:
         raise unauthorized() from None
-    worker = db.scalars(
-        select(WorkerAccount).where(WorkerAccount.id == int(claims["sub"]))
+    device = db.scalars(
+        select(GsmDevice).where(GsmDevice.agent_user_id == int(claims["sub"]))
     ).one_or_none()
-    if worker is None:
+    agent = db.get(User, device.agent_user_id) if device else None
+    if device is None or agent is None or not agent.is_active:
         raise unauthorized()
-    return worker
+    return device

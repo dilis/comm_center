@@ -2,35 +2,35 @@ import threading
 import time
 
 import pytest
-from comm_center_worker.client import ApiUnavailable
+from comm_center_worker.client import ApiError, ApiUnavailable
 from comm_center_worker.fake import FakeProvider
 from comm_center_worker.outbound import RetryPolicy
 from comm_center_worker.runner import DeviceWorker
 from comm_center_worker.supervisor import Supervisor
 from sqlalchemy import text
 
-from app.devices import ensure_fake_device, register_device
+from app.devices import register_device
 from tests.db.helpers import insert
 from tests.worker.conftest import queue, row
 
 
 @pytest.fixture
 def build(make_api):
-    """A supervisor whose loops each get a fresh API client and a fake provider."""
+    """A supervisor whose loop gets a fresh API client and a fake provider."""
 
-    def make(providers=None, supported=("fake",)):
+    def make(unrunnable=False):
         stop = threading.Event()
-        made = {} if providers is None else providers
+        made = {}
 
         def make_worker(device):
-            if device["provider"] != "fake":
-                raise ValueError(f"cannot run {device['provider']}")
+            if unrunnable:
+                raise ValueError("cannot run this here")
             provider = made.setdefault(device["id"], FakeProvider())
             return DeviceWorker(
                 device["id"], provider, make_api(), RetryPolicy(3, 0.0), sleep=lambda s: None
             )
 
-        supervisor = Supervisor(make_api(), make_worker, list(supported), stop, interval=0.01)
+        supervisor = Supervisor(make_api(), make_worker, stop, interval=0.01)
         return supervisor, stop, made
 
     return make
@@ -50,22 +50,18 @@ def wait_for(condition, timeout=10.0):
     return condition()
 
 
-def test_sync_starts_one_loop_per_device_and_is_idempotent(session_factory, build, device):
+def test_sync_starts_the_loop_for_its_device_and_is_idempotent(build, device):
     supervisor, stop, providers = build()
-    with session_factory() as db:
-        second = register_device(
-            db, name="d2", serial_port="/dev/b", phone_number="+639170000002", worker="w1"
-        )
-    assert sorted(supervisor.sync()) == sorted([device.id, second.id])
+    assert supervisor.sync() == [device.id]
     assert supervisor.sync() == []  # nothing new, nothing restarted
-    assert supervisor.running() == 2
+    assert supervisor.running() == 1
     shut_down(supervisor, stop)
     assert all(p.closed for p in providers.values())
 
 
-def test_only_this_workers_devices_are_run(session_factory, build, device):
+def test_only_the_workers_own_device_is_run(session_factory, build, device):
     with session_factory() as db:
-        register_device(db, name="other", serial_port="/dev/o", phone_number="+639170000004")
+        register_device(db, name="other", phone_number="+639170000004")
     supervisor, stop, _ = build()
     assert supervisor.sync() == [device.id]
     shut_down(supervisor, stop)
@@ -80,69 +76,29 @@ def test_the_loops_really_work_the_queue(session_factory, commit, ana, build, de
     assert providers[device.id].sent == [("+639171234567", "hello")]
 
 
-def test_a_device_assigned_later_is_picked_up_by_the_next_sync(session_factory, build):
+def test_a_deleted_device_can_no_longer_sign_in_so_the_sync_fails(session_factory, build, device):
     supervisor, stop, _ = build()
-    assert supervisor.sync() == []  # nothing assigned yet: idle, not an error
     with session_factory() as db:
-        late = register_device(
-            db, name="late", serial_port="/dev/l", phone_number="+639170000003", worker="w1"
-        )
-    assert supervisor.sync() == [late.id]
-    shut_down(supervisor, stop)
-
-
-@pytest.mark.parametrize(
-    "removal",
-    ["UPDATE gsm_device SET deleted_at = NOW()", "UPDATE gsm_device SET worker_id = NULL"],
-)
-def test_a_device_taken_away_stops_and_is_not_restarted(session_factory, build, device, removal):
-    supervisor, stop, providers = build()
-    supervisor.sync()
-    with session_factory() as db:
-        db.execute(text(removal + " WHERE id = :i"), {"i": device.id})
+        db.execute(text("UPDATE gsm_device SET deleted_at = NOW() WHERE id = :i"), {"i": device.id})
         db.commit()
-    assert supervisor.sync() == []
-    assert wait_for(lambda: supervisor.running() == 0)
-    assert providers[device.id].closed
-    assert supervisor.sync() == []
+    with pytest.raises(ApiError):
+        supervisor.sync()
     shut_down(supervisor, stop)
 
 
-def test_a_device_this_worker_cannot_run_is_skipped_without_harming_the_others(
-    session_factory, build, device
-):
-    with session_factory() as db:
-        register_device(
-            db, name="modem", serial_port="/dev/m", phone_number="+639170000005",
-            provider="gsm_modem", worker="w1",
-        )  # fmt: skip
-    supervisor, stop, _ = build()
-    assert supervisor.sync() == [device.id]
+def test_a_device_this_worker_cannot_run_is_skipped_and_not_retried(build, device):
+    supervisor, stop, _ = build(unrunnable=True)
+    assert supervisor.sync() == []
     assert supervisor.sync() == []  # not retried (and not logged again) on every sync
-    shut_down(supervisor, stop)
-
-
-def test_the_session_reports_the_providers_this_worker_supports(build, monkeypatch):
-    supervisor, stop, _ = build(supported=("fake", "android"))
-    seen = {}
-    real = supervisor.api.session
-
-    def spy(version, providers, instance_id, protocol_version=1):
-        seen["providers"] = providers
-        return real(version, providers, instance_id, protocol_version)
-
-    monkeypatch.setattr(supervisor.api, "session", spy)
-    supervisor.sync()
-    assert seen["providers"] == ["fake", "android"]
+    assert supervisor.running() == 0
     shut_down(supervisor, stop)
 
 
 def test_a_new_session_fails_what_a_crashed_worker_left_sending(
-    session_factory, commit, ana, build, device, worker
+    session_factory, commit, ana, build, device
 ):
-    account, _ = worker
     stuck = queue(commit, ana, status="sending", gsm_device_id=device.id)
-    commit(insert, "message_lease", message_id=stuck, worker_id=account.id, device_id=device.id,
+    commit(insert, "message_lease", message_id=stuck, device_id=device.id,
            expires_at="2999-01-01 00:00:00")  # fmt: skip
     supervisor, stop, providers = build()
     supervisor.sync()
@@ -196,18 +152,3 @@ def test_run_keeps_going_but_does_not_beat_while_the_api_is_down(build, monkeypa
     supervisor.run(lambda: beats.append(1))
     assert len(calls) == 3
     assert len(beats) == 1  # only the answer that worked counts as healthy
-
-
-def test_ensure_fake_device_registers_one_only_when_there_is_none(session_factory, worker):
-    with session_factory() as db:
-        created = ensure_fake_device(db, "w1")
-    assert created is not None and created.name == "fake"
-    with session_factory() as db:
-        assert ensure_fake_device(db, "w1") is None  # already has a device
-        assert db.execute(text("SELECT COUNT(*) FROM gsm_device")).scalar_one() == 1
-
-
-def test_ensure_fake_device_leaves_real_devices_alone(session_factory, device):
-    with session_factory() as db:
-        assert ensure_fake_device(db, "w1") is None
-        assert db.execute(text("SELECT name FROM gsm_device")).scalars().all() == ["d1"]

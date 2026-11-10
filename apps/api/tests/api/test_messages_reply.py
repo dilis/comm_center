@@ -32,7 +32,7 @@ def agent(conn):
 
 @pytest.fixture
 def ana(conn):
-    cid = make_contact(conn, "Ana Cruz")
+    cid = make_contact(conn, first_name="Ana", last_name="Cruz")
     make_phone(conn, cid, "+639171234567", is_primary=1)
     return cid
 
@@ -165,3 +165,8 @@ def test_the_new_message_is_a_normal_queued_one_for_the_worker(client, h, conn, 
         {"i": new_id},
     ).one()
     assert row.status == "queued" and row.gsm_device_id is None and row.reply_to_id == received
+
+
+def test_the_reply_can_use_first_and_last_names(client, h, received):
+    out = reply(client, h, received, "Dear {{first_name}} {{last_name}}, hello {{name}}")
+    assert out.json()["content"] == "Dear Ana Cruz, hello Ana Cruz"

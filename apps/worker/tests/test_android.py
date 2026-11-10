@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from comm_center_worker.android import AndroidGatewayProvider, from_device
+from comm_center_worker.android import AndroidGatewayProvider, from_config
 from comm_center_worker.provider import PermanentSendError, ProviderError
 
 
@@ -136,49 +136,32 @@ def test_a_base_url_must_be_http_or_https():
         AndroidGatewayProvider("/dev/ttyUSB0", "u", "p")
 
 
-# --- building it from a device's config and the worker's own environment ---
-
-DEVICE = {
-    "id": 3,
-    "name": "phone1",
-    "provider": "android",
-    "config": {
-        "base_url": "http://192.168.1.50:8080",
-        "username_ref": "PHONE1_USERNAME",
-        "password_ref": "PHONE1_PASSWORD",
-    },
-}
+# --- building it from the worker's own settings ---
 
 
-def test_the_login_is_read_from_the_workers_environment_not_from_the_config():
-    env = {"PHONE1_USERNAME": "sms", "PHONE1_PASSWORD": "s3cret"}
+def test_the_login_is_what_the_worker_was_given():
     seen = []
-    provider = from_device(
-        DEVICE,
-        env,
+    provider = from_config(
+        "http://192.168.1.50:8080",
+        "sms",
+        "s3cret",
         timeout=5,
         transport=httpx.MockTransport(lambda r: seen.append(r) or httpx.Response(200)),
     )
     provider.send("+639171234567", "x", message_id=1)
     expected = "Basic " + base64.b64encode(b"sms:s3cret").decode()
     assert seen[0].headers["authorization"] == expected
-    assert "s3cret" not in json.dumps(DEVICE)  # nothing secret ever travels in the config
 
 
 @pytest.mark.parametrize(
-    "config, env, complaint",
+    "args, complaint",
     [
-        ({}, {}, "base_url"),
-        ({"base_url": "http://p"}, {}, "username_ref"),
-        ({"base_url": "http://p", "username_ref": "U", "password_ref": "P"}, {}, "U"),
-        ({"base_url": "http://p", "username_ref": "U", "password_ref": "P"}, {"U": "x"}, "P"),
-        (
-            {"base_url": "ftp://p", "username_ref": "U", "password_ref": "P"},
-            {"U": "x", "P": "y"},
-            "http",
-        ),
+        (("", "u", "p"), "WORKER_ANDROID_BASE_URL"),
+        (("http://p", "", "p"), "WORKER_ANDROID_USERNAME"),
+        (("http://p", "u", ""), "WORKER_ANDROID_PASSWORD"),
+        (("ftp://p", "u", "p"), "http"),
     ],
 )
-def test_a_device_that_cannot_be_set_up_says_what_is_missing(config, env, complaint):
+def test_a_provider_that_cannot_be_set_up_says_what_is_missing(args, complaint):
     with pytest.raises(ValueError, match=complaint):
-        from_device({**DEVICE, "config": config}, env, timeout=5)
+        from_config(*args, timeout=5)

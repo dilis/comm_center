@@ -174,8 +174,8 @@ def test_each_recipient_gets_their_own_name(client, h, conn):
 
 def test_unknown_placeholders_reject_the_whole_request(client, h, conn):
     ana = person(conn, "Ana", "+639171111111")
-    r = bulk(client, h, [ana], content="Hi {{first_name}}")
-    assert r.status_code == 422 and "unknown placeholder {{first_name}}" in r.text
+    r = bulk(client, h, [ana], content="Hi {{nickname}}")
+    assert r.status_code == 422 and "unknown placeholder {{nickname}}" in r.text
     assert conn.execute(text("SELECT COUNT(*) FROM messages")).scalar_one() == 0
 
 

@@ -5,7 +5,7 @@ import { FieldError } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { insertAt, placeholderError, renderPreview } from "@/lib/placeholders";
+import { insertAt, placeholderError, renderPreview, type Recipient } from "@/lib/placeholders";
 
 export const MAX_LENGTH = 1600; // ten SMS segments: the API's limit
 
@@ -22,10 +22,10 @@ export const contentSchema = z.string().superRefine((text, ctx) => {
 /** The message box: an "Insert name" button, a character counter, and a preview of the text as the
  *  first recipient will get it (the server fills in each recipient's own name). */
 export function ComposeField({
-  id, value, onChange, error, previewName,
-}: { id: string; value: string; onChange: (text: string) => void; error?: string; previewName?: string }) {
+  id, value, onChange, error, previewFor,
+}: { id: string; value: string; onChange: (text: string) => void; error?: string; previewFor?: Recipient }) {
   const box = useRef<HTMLTextAreaElement>(null);
-  const preview = previewName ? renderPreview(value, previewName) : null;
+  const preview = previewFor ? renderPreview(value, previewFor) : null;
   const showPreview = preview !== null && preview !== value;
 
   function insertName() {
@@ -48,11 +48,11 @@ export function ComposeField({
       </div>
       <Textarea id={id} ref={box} value={value} onChange={(e) => onChange(e.target.value)} />
       <p className="text-xs text-muted-foreground">
-        Write <code>{"{{name}}"}</code> where each contact's name should go.
+        Write <code>{"{{name}}"}</code> (or <code>{"{{first_name}}"}</code>, <code>{"{{last_name}}"}</code>) where each contact's name should go.
       </p>
       {showPreview && (
         <div data-testid="preview" className="space-y-1 rounded-md border bg-muted p-2 text-sm">
-          <p className="text-xs font-medium text-muted-foreground">Preview for {previewName}</p>
+          <p className="text-xs font-medium text-muted-foreground">Preview for {previewFor?.name}</p>
           <p className="whitespace-pre-wrap break-words">{preview}</p>
           {preview.length > MAX_LENGTH && (
             <p className="text-xs text-destructive">Over {MAX_LENGTH} characters once the name is inserted</p>

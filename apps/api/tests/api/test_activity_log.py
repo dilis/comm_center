@@ -30,8 +30,8 @@ def boss(conn):
 
 def test_creating_updating_and_deleting_a_contact_is_logged(client, db, boss):
     h = auth_header(client, "boss")
-    cid = client.post("/contacts", headers=h, json={"name": "Ana"}).json()["id"]
-    client.put(f"/contacts/{cid}", headers=h, json={"name": "Ana B"})
+    cid = client.post("/contacts", headers=h, json={"first_name": "Ana"}).json()["id"]
+    client.put(f"/contacts/{cid}", headers=h, json={"first_name": "Ana B"})
     client.delete(f"/contacts/{cid}", headers=h)
     got = [(r.action, r.resource, r.resource_id, r.user_id) for r in rows(db)]
     assert got == [("create", "contact", cid, boss), ("update", "contact", cid, boss),
@@ -43,7 +43,7 @@ def test_creating_updating_and_deleting_a_contact_is_logged(client, db, boss):
 def test_user_management_is_logged_without_secrets(client, db, boss):
     h = auth_header(client, "boss")
     uid = client.post("/users", headers=h, json={
-        "username": "newbie", "password": "a long enough pass", "contact": {"name": "New B"},
+        "username": "newbie", "password": "a long enough pass", "contact": {"first_name": "New B"},
     }).json()["id"]
     client.put(f"/users/{uid}", headers=h, json={"is_active": False})
     client.post(f"/users/{uid}/unlock", headers=h)
@@ -75,7 +75,7 @@ def test_messages_are_logged_without_their_text(client, conn, db, boss):
 
 def test_own_account_changes_are_logged(client, db, boss):
     h = auth_header(client, "boss")
-    client.patch("/auth/me/profile", headers=h, json={"name": "Boss Man"})
+    client.patch("/auth/me/profile", headers=h, json={"first_name": "Boss Man"})
     client.put("/auth/me/phones", headers=h, json={"phones": [{"phone": "+639171230000"}]})
     client.put("/auth/me/password", headers=h,
                json={"current_password": PASSWORD, "new_password": "another long pass"})
@@ -89,12 +89,12 @@ def test_reads_failures_and_rejected_requests_are_not_logged(client, conn, db, b
     h = auth_header(client, "boss")
     client.get("/contacts", headers=h)
     client.get("/messages", headers=h)
-    client.put("/contacts/999999", headers=h, json={"name": "x"})  # 404
+    client.put("/contacts/999999", headers=h, json={"first_name": "x"})  # 404
     client.post("/contacts", headers=h, json={})  # 422
     client.put("/auth/me/password", headers=h, json={"current_password": "wrong password!", "new_password": "another long pass"})
     make_login_user(conn, "nobody")
     agent = auth_header(client, "nobody")
-    client.post("/contacts", headers=agent, json={"name": "x"})  # 403
+    client.post("/contacts", headers=agent, json={"first_name": "x"})  # 403
     assert rows(db) == []
 
 
@@ -107,8 +107,8 @@ def test_viewing_the_logs_is_not_itself_logged(client, db, boss):
 
 def test_list_shows_newest_first_with_who_did_it(client, db, boss):
     h = auth_header(client, "boss")
-    client.post("/contacts", headers=h, json={"name": "First"})
-    client.post("/contacts", headers=h, json={"name": "Second"})
+    client.post("/contacts", headers=h, json={"first_name": "First"})
+    client.post("/contacts", headers=h, json={"first_name": "Second"})
     r = client.get("/logs/activity", headers=h)
     assert r.status_code == 200
     body = r.json()
@@ -122,8 +122,8 @@ def test_list_shows_newest_first_with_who_did_it(client, db, boss):
 def test_list_filters_and_pages(client, conn, db, boss):
     make_login_user(conn, "other", "operator")
     h, other = auth_header(client, "boss"), auth_header(client, "other")
-    client.post("/contacts", headers=h, json={"name": "Alpha"})
-    cid = client.post("/contacts", headers=other, json={"name": "Beta"}).json()["id"]
+    client.post("/contacts", headers=h, json={"first_name": "Alpha"})
+    cid = client.post("/contacts", headers=other, json={"first_name": "Beta"}).json()["id"]
     client.delete(f"/contacts/{cid}", headers=h)
 
     def total(**params):
@@ -141,7 +141,7 @@ def test_list_filters_and_pages(client, conn, db, boss):
 
 def test_a_deleted_users_entries_still_show_their_name(client, conn, db, boss):
     gone = make_login_user(conn, "leaver", "operator")
-    client.post("/contacts", headers=auth_header(client, "leaver"), json={"name": "Kept"})
+    client.post("/contacts", headers=auth_header(client, "leaver"), json={"first_name": "Kept"})
     client.delete(f"/users/{gone}", headers=auth_header(client, "boss"))
     items = client.get("/logs/activity", headers=auth_header(client, "boss"),
                        params={"user_id": gone}).json()["items"]

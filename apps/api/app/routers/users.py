@@ -17,7 +17,7 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.models import AccessGroup, Contact, RefreshToken, User, UserGroup
 from app.pagination import Page, PageParams, paginate
-from app.schemas import ContactIn, PhoneIn, PhoneOut, SortOrder
+from app.schemas import ContactIn, PartialNameParts, PhoneIn, PhoneOut, SortOrder
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
@@ -32,7 +32,10 @@ class UserOut(BaseModel):
     id: int
     username: str
     contact_id: int
-    name: str
+    name: str  # first, middle and last name joined by spaces
+    first_name: str
+    middle_name: str | None
+    last_name: str | None
     email: str | None
     phones: list[PhoneOut]
     is_active: bool
@@ -57,17 +60,16 @@ class UserCreate(BaseModel):
         return self
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(PartialNameParts):
     """Omitted fields stay as they are; an explicit ``email: null`` clears the email.
 
     ``username``, ``is_active`` and ``group_ids`` are checked against ``users`` permissions;
-    ``name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.
+    ``first_name``, ``middle_name``, ``last_name``, ``email`` and ``phones`` live on the contact and need ``contacts`` update.
     """
 
     username: str | None = Field(default=None, min_length=1, max_length=64)
     is_active: bool | None = None
     group_ids: list[int] | None = None
-    name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
     phones: list[PhoneIn] | None = None
 
@@ -102,6 +104,9 @@ def to_out(db: Session, users: list[User]) -> list[UserOut]:
             username=u.username,
             contact_id=u.contact_id,
             name=contacts[u.contact_id].name,
+            first_name=contacts[u.contact_id].first_name,
+            middle_name=contacts[u.contact_id].middle_name,
+            last_name=contacts[u.contact_id].last_name,
             email=contacts[u.contact_id].email,
             phones=phones.get(u.contact_id, []),
             is_active=u.is_active,
@@ -180,7 +185,9 @@ def create_user(
         if not caller.can("contacts", "create"):
             raise forbidden()
         contact = Contact(
-            name=body.contact.name,
+            first_name=body.contact.first_name,
+            middle_name=body.contact.middle_name,
+            last_name=body.contact.last_name,
             type="person",
             email=body.contact.email,
             notes=body.contact.notes,
@@ -237,7 +244,7 @@ def update_user(
     if user.id == caller.id and body.is_active is False:
         raise HTTPException(status.HTTP_409_CONFLICT, "you cannot deactivate yourself")
 
-    if fields & {"name", "email", "phones"}:
+    if fields & {"first_name", "middle_name", "last_name", "email", "phones"}:
         # These live on the contact, so they need contacts:update on that contact.
         if not caller.can("contacts", "update"):
             raise forbidden()
@@ -246,8 +253,7 @@ def update_user(
         ).one_or_none()
         if contact is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "contact not found")
-        if body.name is not None:
-            contact.name = body.name
+        body.apply_name(contact)
         if "email" in fields:
             contact.email = body.email
         if body.phones is not None:

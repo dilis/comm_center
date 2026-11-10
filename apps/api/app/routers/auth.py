@@ -15,7 +15,7 @@ from app.contact_ops import replace_phones as replace_contact_phones
 from app.db import get_db
 from app.deps import can_log_in, get_current_user, get_current_user_row, unauthorized
 from app.models import Contact, ContactPhone, RefreshToken, User
-from app.schemas import PhoneIn, PhoneOut
+from app.schemas import PartialNameParts, PhoneIn, PhoneOut
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,15 +40,17 @@ class TokenPair(BaseModel):
 class MeOut(BaseModel):
     id: int
     username: str
-    name: str
+    name: str  # first, middle and last name joined by spaces
+    first_name: str
+    middle_name: str | None
+    last_name: str | None
     email: str | None
     phones: list[PhoneOut]
     groups: list[str]
     permissions: list[str]  # "resource:action"
 
 
-class ProfileUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
+class ProfileUpdate(PartialNameParts):
     email: EmailStr | None = None
     clear_email: bool = False
 
@@ -201,6 +203,9 @@ def _me(db: Session, user: User, auth: AuthUser) -> MeOut:
         id=user.id,
         username=user.username,
         name=contact.name,
+        first_name=contact.first_name,
+        middle_name=contact.middle_name,
+        last_name=contact.last_name,
         email=contact.email,
         phones=[
             PhoneOut(phone=p.phone_e164, label=p.label, is_primary=p.is_primary) for p in phones
@@ -229,8 +234,7 @@ def update_profile(
 ) -> MeOut:
     """Self-service: edits the caller's own contact, bypassing resource scoping."""
     contact = db.get(Contact, user.contact_id)
-    if body.name is not None:
-        contact.name = body.name
+    body.apply_name(contact)
     if body.clear_email:
         contact.email = None
     elif body.email is not None:

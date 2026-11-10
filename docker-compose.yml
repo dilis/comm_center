@@ -40,13 +40,14 @@ services:
       db:
         condition: service_healthy
 
-  # One-shot setup for the worker: makes sure the worker account exists with WORKER_SECRET (and, if
-  # no device exists yet, a fake one for it) so a fresh stack can send out of the box. It needs the
-  # database, so it runs from the API image after the API has migrated it, and exits when done.
+  # One-shot setup for the worker: makes sure the device `${WORKER_DEVICE:-fake}` exists, with
+  # WORKER_SECRET as the secret its worker signs in with (as the device's agent `gsm-<name>`), so a
+  # fresh stack can send out of the box. It needs the database, so it runs from the API image after
+  # the API has migrated it, and exits when done.
   worker-setup:
     profiles: ["app", "worker"]
     build: ./apps/api
-    command: ["/opt/venv/bin/python", "-m", "app.cli", "ensure-worker", "--name", "${WORKER_NAME:-local}", "--fake-device"]
+    command: ["/opt/venv/bin/python", "-m", "app.cli", "ensure-device", "--name", "${WORKER_DEVICE:-fake}", "--phone", "${WORKER_DEVICE_PHONE:-+639170000000}"]
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
       WORKER_SECRET: ${WORKER_SECRET:-dev-only-worker-secret-change-me}
@@ -59,11 +60,11 @@ services:
         required: false  # waits for the API (it runs the migrations) when that profile is on
 
   # The worker holds the devices (serial ports, phones), so it is a process of its own, never part
-  # of the API. It has NO database access: it signs in to the API as a worker account and learns
-  # from it which devices to run. It starts with the rest of the stack (profile `app`);
-  # `--profile worker` starts it alone, against an API elsewhere (set WORKER_API_URL). Devices of
-  # the `fake` provider only LOG sends instead of transmitting them (and mark them sent): do not
-  # use them where real messages matter. Append a JSON line to /tmp/fake-inbox.jsonl in this
+  # of the API. It has NO database access: it signs in to the API as its device's agent and serves
+  # that device. It starts with the rest of the stack (profile `app`); `--profile worker` starts it
+  # alone, against an API elsewhere (set WORKER_API_URL). The `fake` provider (WORKER_PROVIDER, the
+  # worker's own choice: the API does not know) only LOGS sends instead of transmitting them (and
+  # marks them sent): do not use it where real messages matter. Append a JSON line to /tmp/fake-inbox.jsonl in this
   # container to "receive" an SMS (see docs/DEPLOYMENT.md). A modem also needs its serial device
   # passed through (`devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]`) once the hardware is available.
   worker:
@@ -72,8 +73,9 @@ services:
     command: ["/opt/venv/bin/python", "-m", "comm_center_worker", "--fake-inbox", "/tmp/fake-inbox.jsonl"]
     environment:
       WORKER_API_URL: ${WORKER_API_URL:-http://api:8000}
-      WORKER_NAME: ${WORKER_NAME:-local}
+      WORKER_NAME: gsm-${WORKER_DEVICE:-fake}
       WORKER_SECRET: ${WORKER_SECRET:-dev-only-worker-secret-change-me}
+      WORKER_PROVIDER: ${WORKER_PROVIDER:-fake}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
       # How long the fake modem takes per message (seconds): the delay plus up to the jitter.

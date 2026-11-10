@@ -120,16 +120,13 @@ class ApiClient:
 
     # --- the worker API ---
 
-    def session(
-        self, version: str, providers: list[str], instance_id: str, protocol_version: int = 1
-    ) -> dict:
+    def session(self, version: str, instance_id: str, protocol_version: int = 2) -> dict:
         response = self._call(
             "POST",
             "/worker/session",
             json={
                 "version": version,
                 "protocol_version": protocol_version,
-                "providers": providers,
                 "instance_id": instance_id,
             },
         )

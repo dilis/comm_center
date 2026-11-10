@@ -6,7 +6,6 @@ from sqlalchemy import text
 import app.routers.worker as worker_router
 from app.config import settings
 from app.devices import register_device
-from app.worker_accounts import create_worker
 from tests.api.conftest import auth_header
 from tests.api.test_worker_auth import SESSION
 from tests.api.worker_helpers import (
@@ -14,7 +13,7 @@ from tests.api.worker_helpers import (
     lease_row,
     make_worker_with_device,
     message_row,
-    sign_in,
+    other_worker,
 )
 from tests.db.helpers import make_contact, make_login_user, make_message, make_phone
 
@@ -65,6 +64,33 @@ def test_a_claimed_message_is_not_handed_out_twice(client, conn, setup, ana):
     make_message(conn, ana)
     assert claim(client, headers, device).json()["message"] is not None
     assert claim(client, headers, device).json()["message"] is None
+
+
+def test_a_message_meant_for_one_device_is_not_given_to_another(client, conn, db, setup, ana):
+    headers, device = setup
+    other_headers, other = other_worker(client, db)
+    meant_for_other = make_message(conn, ana, content="for d2", gsm_device_id=other.id)
+    assert claim(client, headers, device).json()["message"] is None
+    assert message_row(db, meant_for_other).status == "queued"
+    got = claim(client, other_headers, other).json()["message"]
+    assert got["id"] == meant_for_other
+
+
+def test_a_device_skips_what_is_meant_for_others_to_reach_what_anyone_may_take(
+    client, conn, db, setup, ana
+):
+    headers, device = setup
+    _, other = other_worker(client, db)
+    make_message(conn, ana, content="for d2 (older)", gsm_device_id=other.id)
+    anyone = make_message(conn, ana, content="for anyone")
+    assert claim(client, headers, device).json()["message"]["id"] == anyone
+
+
+def test_a_message_meant_for_this_device_is_taken_by_it(client, conn, db, setup, ana):
+    headers, device = setup
+    mine = make_message(conn, ana, gsm_device_id=device.id)
+    assert claim(client, headers, device).json()["message"]["id"] == mine
+    assert message_row(db, mine).gsm_device_id == device.id
 
 
 def test_the_snapshot_number_is_sent_not_the_contacts_current_one(client, conn, setup, ana):
@@ -134,9 +160,7 @@ def test_a_new_session_fails_what_the_worker_left_sending(client, conn, db, setu
 
 def test_a_session_does_not_touch_another_workers_leases(client, conn, db, setup, ana):
     headers, _ = setup
-    _, other_secret = create_worker(db, "w2")
-    other_device = register_device(db, "d2", "x", "+639170000001", worker="w2")
-    other_headers = sign_in(client, "w2", other_secret)
+    other_headers, other_device = other_worker(client, db)
     held = make_message(conn, ana)
     claim(client, other_headers, other_device)
     client.post(
@@ -149,11 +173,8 @@ def test_a_session_does_not_touch_another_workers_leases(client, conn, db, setup
 
 def test_a_device_that_is_not_the_workers_is_not_found(client, db, setup):
     headers, _ = setup
-    create_worker(db, "w2")
-    theirs = register_device(db, "d2", "x", "+639170000001", worker="w2")
-    unassigned = register_device(db, "d3", "x", "+639170000002")
+    theirs = register_device(db, "d2", "+639170000001")
     assert claim(client, headers, theirs).status_code == 404
-    assert claim(client, headers, unassigned).status_code == 404
     r = client.post("/worker/claim", json={"device_id": 999999}, headers=headers)
     assert r.status_code == 404
 

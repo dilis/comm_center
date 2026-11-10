@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import security
 from app.models import AccessGroup, Contact, User, UserGroup
+from app.names import split_name
 
 SYSTEM_USER_ID = 1
 
@@ -23,7 +24,10 @@ def create_admin(db: Session, username: str, password: str, name: str) -> User:
     if admin_group is None:
         raise BootstrapError("the 'admin' group is missing; run the database migrations first")
 
-    contact = Contact(name=name, type="person", owner_id=SYSTEM_USER_ID)
+    first, middle, last = split_name(name)
+    contact = Contact(
+        first_name=first, middle_name=middle, last_name=last, type="person", owner_id=SYSTEM_USER_ID
+    )
     db.add(contact)
     db.flush()
     user = User(

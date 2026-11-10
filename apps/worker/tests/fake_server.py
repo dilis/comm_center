@@ -35,7 +35,7 @@ class FakeServer:
             if path == "/worker/session":
                 self.sessions.append(body)
                 return httpx.Response(
-                    200, json={"worker_id": 1, "protocol_version": 1, "devices": self.devices}
+                    200, json={"protocol_version": 2, "devices": self.devices}
                 )
             if path == "/worker/claim":
                 message = self.queue.pop(0) if self.queue else None

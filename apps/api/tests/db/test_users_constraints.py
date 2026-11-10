@@ -41,13 +41,16 @@ def test_human_cannot_have_a_direction(conn):
         make_user(conn, "human", agent_direction="inbound")
 
 
-def test_system_agent_cannot_log_in_or_hold_a_password(conn):
+def test_system_agent_cannot_log_in(conn):
     with pytest.raises(DBAPIError, match="ck_users_system_agent_cannot_log_in"):
         make_user(conn, "a1", is_system=1, agent_direction="inbound", login_enabled=1)
-    with pytest.raises(DBAPIError, match="ck_users_system_agent_cannot_log_in"):
-        make_user(
-            conn, "a2", is_system=1, agent_direction="inbound", login_enabled=0, password_hash="x"
-        )
+
+
+def test_system_agent_may_hold_a_secret_for_its_worker(conn):
+    """A worker signs in as its device's agent: the hash is its secret, not a web password."""
+    make_user(
+        conn, "a2", is_system=1, agent_direction="inbound", login_enabled=0, password_hash="x"
+    )
 
 
 def test_system_agent_cannot_be_soft_deleted(conn):
