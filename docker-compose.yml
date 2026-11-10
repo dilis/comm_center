@@ -76,6 +76,8 @@ services:
       WORKER_NAME: gsm-${WORKER_DEVICE:-fake}
       WORKER_SECRET: ${WORKER_SECRET:-dev-only-worker-secret-change-me}
       WORKER_PROVIDER: ${WORKER_PROVIDER:-fake}
+      # Least seconds between sends (carriers may throttle bulk SMS); 0 = no spacing.
+      WORKER_SEND_INTERVAL_SECONDS: ${WORKER_SEND_INTERVAL_SECONDS:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       WORKER_HEARTBEAT_FILE: /tmp/worker.heartbeat
       # How long the fake modem takes per message (seconds): the delay plus up to the jitter.

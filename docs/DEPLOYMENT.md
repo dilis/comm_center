@@ -35,6 +35,7 @@ The same few variables drive every mode.
 | `API_UPSTREAM` | Web container | `host:port` nginx forwards `/api/` to, as seen from the web container. Set with `-e` outside compose. | `api:8000` |
 | `API_PROXY_TARGET` | `pnpm dev`, `vite preview` | URL those two forward `/api` to | `http://127.0.0.1:8000` |
 | `WORKER_PROVIDER`, `WORKER_ANDROID_BASE_URL`, `WORKER_ANDROID_USERNAME`, `WORKER_ANDROID_PASSWORD` | Worker | What kind of device the worker runs (`fake` or `android`) and, for `android`, the phone's address and login. The API does not know any of this. | `fake`, none, none, none |
+| `WORKER_SEND_INTERVAL_SECONDS` | Worker | Least seconds between two sends from this device (`0`: no spacing). Some carriers throttle bulk SMS from consumer accounts: try `10`, `20` or `30`. Counted from the end of one send to the start of the next; a message waits queued (not leased) meanwhile, and receiving is not delayed. A setting of the worker, since it knows its SIM; a restart applies a change. | `0` |
 | `WORKER_FAKE_SEND_DELAY_SECONDS`, `WORKER_FAKE_SEND_JITTER_SECONDS` | Worker (fake provider) | How long the fake modem takes to send each message: the delay plus up to the jitter, in seconds. `0` and `0` make sends instant. | `2`, `1` |
 | `DB_PORT`, `API_PORT`, `WEB_PORT` | Compose only | Host ports for the three services | `3307`, `8000`, `8080` |
 
@@ -247,12 +248,12 @@ An Android phone running [SMS Gateway for Android](https://github.com/capcom6/an
 How the worker uses the phone:
 - **Sending:** `POST /message` on the phone with our message id as the gateway's id (`cc-<id>`), so delivery events match and a retry after a lost answer is recognised by the phone. Any 2xx counts as sent (the phone queued it; the carrier's word comes later by webhook). A 400 or 422 fails the message at once; a timeout, an unreachable phone, wrong credentials or a 5xx is retried with the usual backoff, then marked failed, and the device shows as `error`. A 409 for a repeated id is taken to mean an earlier try got through (**assumed from the gateway's design, not yet confirmed on a real phone**).
 - **Receiving:** only by webhook, never polled. The worker checks the phone is reachable every cycle, which is how an offline phone shows up as `error`.
-- **Same phone, one worker:** only the worker named in the device's `worker_id` talks to it.
+- **Same phone, one worker:** a worker serves exactly one device, so run one worker per phone.
 
 How the API treats webhooks:
 - **Received** (`sms:received`): stored through the same path as any inbound SMS. The webhook answers 200 only after the commit; the app retries anything else for days. Each event is stored once (by the event id), so a retry creates no duplicate. A sender that is not a phone number is acknowledged and dropped.
 - **Delivery** (`sms:delivered`, `sms:failed`): matched to our message by the id we give the gateway (`cc-<message id>`), and applied only to a message of that same phone that is `sending` or `sent`. `delivered` and `failed` are final. A `sent` report from the worker never overwrites one the phone already made. Events for ids that are not ours are acknowledged and ignored.
-- **Errors:** a bad or stale signature, an unknown device and a device that is not `android` all get the same 401. A signed body that is not a valid event gets 400. Everything else (pings, MMS, batches) gets 200 and is ignored.
+- **Errors:** a bad or stale signature, an unknown device gets the same 401. A signed body that is not a valid event gets 400. Everything else (pings, MMS, batches) gets 200 and is ignored.
 
 ## Troubleshooting
 

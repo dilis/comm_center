@@ -183,6 +183,58 @@ def test_a_device_error_is_reported_and_nothing_is_lost(server, api):
     assert server.statuses[-1] == (3, "online", None) and server.results == [(1, "sent", None)]
 
 
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_sends_are_spaced_by_the_send_interval(server, api):
+    server.queue += [message(i) for i in range(1, 4)]
+    clock = Clock()
+    w = worker(api, FakeProvider(), send_interval=30, clock=clock)
+    assert w.run_once() == 1  # the first goes at once, one per cycle
+    assert w.run_once() == 0 and len(server.results) == 1  # too soon: nothing is even claimed
+    assert len(server.queue) == 2
+    clock.now += 29
+    assert w.run_once() == 0 and len(server.results) == 1
+    clock.now += 1
+    assert w.run_once() == 1 and len(server.results) == 2
+
+
+def test_the_wait_is_counted_from_the_end_of_the_previous_send(server, api):
+    server.queue += [message(1), message(2)]
+    clock = Clock()
+
+    class Slow(FakeProvider):
+        def send(self, *a, **kw):
+            clock.now += 8  # the send itself takes time
+            super().send(*a, **kw)
+
+    w = worker(api, Slow(), send_interval=10, clock=clock)
+    w.run_once()
+    clock.now += 9
+    assert w.run_once() == 0
+    clock.now += 1
+    assert w.run_once() == 1
+
+
+def test_a_throttled_worker_still_receives(server, api):
+    server.queue += [message(1), message(2)]
+    provider = FakeProvider()
+    w = worker(api, provider, send_interval=30, clock=Clock())
+    w.run_once()
+    provider.inbound.append(sms())
+    assert w.run_once() == 1 and len(server.results) == 1  # received, did not send
+
+
+def test_no_interval_means_no_spacing(server, api):
+    server.queue += [message(i) for i in range(1, 4)]
+    assert worker(api, FakeProvider(), send_interval=0, clock=Clock()).run_once() == 3
+
+
 def test_a_cycle_sends_a_bounded_batch(server, api):
     server.queue += [message(i) for i in range(1, 6)]
     assert worker(api, FakeProvider(), max_sends_per_cycle=2).run_once() == 2

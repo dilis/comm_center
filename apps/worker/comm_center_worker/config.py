@@ -4,6 +4,7 @@ The worker knows nothing about the database or the API's internals: it needs the
 its own account, and a few knobs for its loops.
 """
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,9 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = 2.0  # idle wait between cycles, and the session interval
     worker_max_attempts: int = 3  # sends per message before it is reported failed
     worker_backoff_base_seconds: float = 2.0  # wait before the 2nd attempt; doubles each time
+    # Least seconds between two sends (0: no spacing). Some carriers throttle bulk SMS from consumer
+    # accounts, e.g. 10, 20 or 30. Counted from the end of one send to the start of the next.
+    worker_send_interval_seconds: float = Field(default=0.0, ge=0)
     worker_heartbeat_file: str = "/tmp/comm-center-worker.heartbeat"  # touched when the API answers
     worker_android_timeout_seconds: float = 15.0  # how long to wait for an Android phone to answer
     # The fake provider imitates a modem: each send takes this long (plus up to the jitter).
