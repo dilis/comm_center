@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             policy,
             sleep=lambda seconds: stop.wait(seconds),
             heartbeat=heartbeat_file.touch,
+            send_interval=settings.worker_send_interval_seconds,
         )
 
     api = new_api()
