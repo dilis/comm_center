@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
 import { NavLink, Navigate, Outlet } from "react-router";
 
 import { useAuth } from "@/auth/AuthContext";
@@ -51,7 +51,19 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
-          <span className="truncate text-brand-foreground/90">{me?.name}</span>
+          <NavLink
+            to="/profile"
+            aria-label="My profile"
+            className={({ isActive }) =>
+              cn(
+                "flex min-w-0 items-center gap-1.5 rounded px-2 py-1.5 text-brand-foreground/90 transition-colors hover:bg-white/10",
+                isActive && "bg-white/15",
+              )
+            }
+          >
+            <UserRound className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">{me?.name}</span>
+          </NavLink>
           <Button variant="outline" size="sm" className="border-white/30 bg-transparent text-brand-foreground hover:bg-white/10" onClick={() => void logout()}>
             <LogOut className="h-4 w-4" aria-hidden />
             Sign out

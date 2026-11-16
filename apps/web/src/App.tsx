@@ -9,6 +9,7 @@ import { RequireAuth, RequireRead } from "@/auth/guards";
 import AppShell, { Home } from "@/components/AppShell";
 import ContactsPage from "@/features/contacts/ContactsPage";
 import LogsPage from "@/features/logs/LogsPage";
+import ProfilePage from "@/features/profile/ProfilePage";
 import MessagesPage from "@/features/messages/MessagesPage";
 import UsersPage from "@/features/users/UsersPage";
 
@@ -34,6 +35,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
               <Route index element={<Home />} />
+              <Route path="profile" element={<ProfilePage />} />
               <Route element={<RequireRead resource="messages" />}>
                 <Route path="messages" element={<MessagesPage />} />
               </Route>

@@ -13,6 +13,8 @@ type Status = "loading" | "anonymous" | "authenticated" | "error";
 type AuthValue = {
   status: Status;
   me: Me | null;
+  /** Replace the signed-in profile after the person edits it. */
+  setMe: (me: Me) => void;
   permissions: PermissionSet;
   can: (permission: string) => boolean;
   canAny: (permissions: string[]) => boolean;
@@ -87,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {
       status,
       me,
+      setMe,
       permissions,
       can: (p) => hasPermission(permissions, p),
       canAny: (ps) => canAny(permissions, ps),
