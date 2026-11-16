@@ -118,24 +118,46 @@ def finish(db: Session, lease: MessageLease, status: str, error: str | None) -> 
 GATEWAY_ID_PREFIX = "cc-"
 
 
-def gateway_message_id(message_id: int) -> str:
-    """The id we give the Android gateway for a message, so its delivery events can be matched."""
-    return f"{GATEWAY_ID_PREFIX}{message_id}"
+def gateway_message_id(message_id: int, attempt: int = 0) -> str:
+    """The id we give the Android gateway for a message, so its delivery events can be matched.
+    The first send is ``cc-<id>``; the n-th retry is ``cc-<id>-<n>``, because the phone refuses an
+    id it already has."""
+    base = f"{GATEWAY_ID_PREFIX}{message_id}"
+    return base if attempt == 0 else f"{base}-{attempt}"
 
 
-def parse_gateway_message_id(value: object) -> int | None:
+def _number(text: str) -> int | None:
+    """A canonical decimal (no sign, no leading zero)."""
+    ok = text.isascii() and text.isdigit() and (text == "0" or not text.startswith("0"))
+    return int(text) if ok else None
+
+
+def parse_gateway_message_id(value: object) -> tuple[int, int] | None:
+    """``(message id, attempt)`` from an id we gave the gateway, or None if it is not one of ours."""
     if not isinstance(value, str) or not value.startswith(GATEWAY_ID_PREFIX):
         return None
-    digits = value[len(GATEWAY_ID_PREFIX) :]
-    return int(digits) if digits.isascii() and digits.isdigit() else None
+    message_part, dash, attempt_part = value[len(GATEWAY_ID_PREFIX) :].partition("-")
+    message_id = _number(message_part)
+    if message_id is None:
+        return None
+    if not dash:
+        return message_id, 0
+    attempt = _number(attempt_part)
+    return (message_id, attempt) if attempt else None  # "-0" is not how the first send is named
 
 
 def apply_delivery_report(
-    db: Session, device_id: int, message_id: int, status: str, error: str | None = None
+    db: Session,
+    device_id: int,
+    message_id: int,
+    attempt: int,
+    status: str,
+    error: str | None = None,
 ) -> bool:
     """Apply what the phone reports about a message it was given: ``delivered`` or ``failed``.
     Only a message of this device that is ``sending`` or ``sent`` changes (``delivered`` and
-    ``failed`` are final). Returns whether it did. The caller commits."""
+    ``failed`` are final), and only for its current attempt: a late report about an earlier try
+    says nothing about the retry. Returns whether it did. The caller commits."""
     values: dict = {"status": status}
     if status == "failed":
         values["error_message"] = (error or "the phone reported a failure")[:MAX_ERROR_LENGTH]
@@ -143,6 +165,7 @@ def apply_delivery_report(
         update(Message)
         .where(
             Message.id == message_id,
+            Message.send_attempt == attempt,
             Message.gsm_device_id == device_id,
             Message.status.in_(("sending", "sent")),
         )

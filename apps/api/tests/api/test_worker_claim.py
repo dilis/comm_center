@@ -50,7 +50,9 @@ def test_the_oldest_queued_message_is_claimed_and_leased(client, conn, db, setup
     second = make_message(conn, ana, content="second")
     r = claim(client, headers, device)
     body = r.json()
-    assert body["message"] == {"id": first, "phone_number": PHONE, "content": "first"}
+    assert body["message"] == {
+        "id": first, "phone_number": PHONE, "content": "first", "attempt": 0,
+    }
     assert body["lease_seconds"] == settings.worker_lease_seconds
     row = message_row(db, first)
     assert (row.status, row.gsm_device_id) == ("sending", device.id)
@@ -222,3 +224,11 @@ def test_long_polling_gives_up_after_the_wait_and_is_capped(client, setup, monke
     clock["now"] = 0.0
     claim(client, headers, device, wait_seconds=10_000)
     assert settings.worker_long_poll_seconds <= clock["now"] < settings.worker_long_poll_seconds + 2
+
+
+def test_a_claimed_message_carries_its_attempt_number(client, conn, setup, ana):
+    headers, device = setup
+    first = make_message(conn, ana)
+    retried = make_message(conn, ana, send_attempt=3)
+    got = [claim(client, headers, device).json()["message"] for _ in range(2)]
+    assert [(m["id"], m["attempt"]) for m in got] == [(first, 0), (retried, 3)]

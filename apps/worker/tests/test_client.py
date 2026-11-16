@@ -118,11 +118,20 @@ def test_a_refused_request_is_an_api_error_with_the_servers_reason():
 
 def test_claim_returns_the_message_and_its_lease():
     body = {
+        "message": {"id": 7, "phone_number": "+639171234567", "content": "hi", "attempt": 2},
+        "lease_seconds": 120,
+    }
+    api = FakeApi({("POST", "/worker/claim"): httpx.Response(200, json=body)})
+    assert make(api).claim(3) == ClaimedMessage(7, "+639171234567", "hi", 120, 2)
+
+
+def test_claim_without_an_attempt_number_is_the_first_attempt():
+    body = {
         "message": {"id": 7, "phone_number": "+639171234567", "content": "hi"},
         "lease_seconds": 120,
     }
     api = FakeApi({("POST", "/worker/claim"): httpx.Response(200, json=body)})
-    assert make(api).claim(3) == ClaimedMessage(7, "+639171234567", "hi", 120)
+    assert make(api).claim(3).attempt == 0
 
 
 def test_claim_of_an_empty_queue_is_none():

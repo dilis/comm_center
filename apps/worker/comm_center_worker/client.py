@@ -41,6 +41,7 @@ class ClaimedMessage:
     phone_number: str
     content: str
     lease_seconds: int
+    attempt: int = 0  # 0 the first time; n for a person's n-th retry
 
 
 @dataclass(frozen=True)
@@ -141,7 +142,11 @@ class ApiClient:
         if message is None:
             return None
         return ClaimedMessage(
-            message["id"], message["phone_number"], message["content"], body["lease_seconds"]
+            message["id"],
+            message["phone_number"],
+            message["content"],
+            body["lease_seconds"],
+            message.get("attempt", 0),
         )
 
     def extend(self, message_id: int) -> None:

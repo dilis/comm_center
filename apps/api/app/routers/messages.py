@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
@@ -370,6 +370,41 @@ def reply_to_message(
     db.flush()
     record_activity(db, request, caller.id, "reply", "message", message.id, f"Replied to message {original.id} from {recipient.name}")
     db.commit()
+    return to_out(db, [message], caller.id)[0]
+
+
+@router.post("/{message_id}/retry", response_model=MessageOut)
+def retry_message(
+    message_id: int,
+    request: Request,
+    caller: AuthUser = Depends(require("messages", "create")),
+    db: Session = Depends(get_db),
+) -> MessageOut:
+    """Queue a failed outbound message again. It keeps its id and text; the next send counts as the
+    next attempt, which gives it a new id on the phone (``cc-<id>-<n>``), so the phone does not
+    refuse it as one it already has. Only a ``failed`` message can be retried, and a message left
+    failed with "delivery unknown" may already have gone out: a person decides, knowing that."""
+    message = get_scoped(db, caller, message_id)
+    owner = db.execute(
+        select(User.is_system, User.agent_direction).where(User.id == message.owner_id),
+        execution_options={"include_deleted": True},
+    ).one()
+    if derive_direction(owner.is_system, owner.agent_direction) != "outbound":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "only sent messages can be retried"
+        )
+    # One conditional UPDATE, so two people retrying at once queue it once.
+    queued = db.execute(
+        update(Message)
+        .where(Message.id == message.id, Message.status == "failed")
+        .values(status="queued", send_attempt=Message.send_attempt + 1, error_message=None)
+    )
+    if queued.rowcount == 0:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "only a failed message can be retried")
+    record_activity(db, request, caller.id, "retry", "message", message.id, f"Retried message {message.id}")
+    db.commit()
+    db.refresh(message)
     return to_out(db, [message], caller.id)[0]
 
 

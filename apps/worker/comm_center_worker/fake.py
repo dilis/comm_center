@@ -35,6 +35,7 @@ class FakeProvider:
         self._sleep = sleep
         self.sent: list[tuple[str, str]] = []
         self.sent_ids: list[int | None] = []
+        self.sent_attempts: list[int] = []
         self.inbound: list[InboundSms] = []
         self.acknowledged: list[InboundSms] = []
         self.send_errors: list[Exception] = []
@@ -49,7 +50,9 @@ class FakeProvider:
         # runs: a restarted process would otherwise reuse `file-1`.
         self._run_id = uuid.uuid4().hex[:8]
 
-    def send(self, phone_number: str, content: str, message_id: int | None = None) -> None:
+    def send(
+        self, phone_number: str, content: str, message_id: int | None = None, attempt: int = 0
+    ) -> None:
         if self.send_errors:
             raise self.send_errors.pop(0)
         if self.on_send:
@@ -59,6 +62,7 @@ class FakeProvider:
         log.info("fake send to %s: %r", phone_number, content)
         self.sent.append((phone_number, content))
         self.sent_ids.append(message_id)
+        self.sent_attempts.append(attempt)
 
     def poll_inbound(self) -> list[InboundSms]:
         if self.poll_errors:

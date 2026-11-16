@@ -105,3 +105,5 @@ def test_the_fake_provider_accepts_the_message_id_and_remembers_it():
     fake.send("+639171234567", "again")  # the id is optional
     assert fake.sent == [("+639171234567", "hi"), ("+639171234567", "again")]
     assert fake.sent_ids == [9, None]
+    fake.send("+639171234567", "retry", message_id=9, attempt=1)
+    assert fake.sent_attempts == [0, 0, 1]

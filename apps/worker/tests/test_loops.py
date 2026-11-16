@@ -38,8 +38,8 @@ def sleeps():
     return []
 
 
-def message(i=1, content="hello"):
-    return {"id": i, "phone_number": "+639171234567", "content": content}
+def message(i=1, content="hello", attempt=0):
+    return {"id": i, "phone_number": "+639171234567", "content": content, "attempt": attempt}
 
 
 def sms(ref="1", sender="+639171234567"):
@@ -373,10 +373,28 @@ def test_a_retry_sends_the_same_message_id_again(server, api, sleeps):
     provider.on_send = lambda phone, content: None
     original = provider.send
 
-    def spy(phone, content, message_id=None):
+    def spy(phone, content, message_id=None, attempt=0):
         ids.append(message_id)
-        return original(phone, content, message_id)
+        return original(phone, content, message_id, attempt)
 
     provider.send = spy
     send_one(api, provider, 3, POLICY, sleeps.append)
     assert ids == [21, 21]
+
+
+def test_the_providers_get_the_attempt_number_of_a_retried_message(server, api, sleeps):
+    server.queue += [message(31), message(32, attempt=2)]
+    provider = FakeProvider()
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    assert provider.sent_ids == [31, 32]
+    assert provider.sent_attempts == [0, 2]
+
+
+def test_the_worker_retrying_a_send_keeps_the_same_attempt_number(server, api, sleeps):
+    """The worker's own retries are for a lost answer: the same gateway id, so the phone can tell."""
+    server.queue.append(message(33, attempt=1))
+    provider = FakeProvider()
+    provider.send_errors.append(ProviderError("busy"))
+    send_one(api, provider, 3, POLICY, sleeps.append)
+    assert provider.sent_attempts == [1]

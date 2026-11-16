@@ -62,16 +62,18 @@ def _received(db: Session, device: GsmDevice, envelope: dict, payload: dict) -> 
 
 
 def _delivery(db: Session, device: GsmDevice, event: str, payload: dict) -> dict:
-    message_id = dispatch.parse_gateway_message_id(payload.get("messageId"))
-    if message_id is None:
+    parsed = dispatch.parse_gateway_message_id(payload.get("messageId"))
+    if parsed is None:
         return {"ignored": True}  # not one of ours (sent from the phone's own app, say)
     if event == "sms:sent":
         return {"ignored": False}  # the worker already marked it sent when the phone accepted it
+    message_id, attempt = parsed
     reason = payload.get("reason")
     changed = dispatch.apply_delivery_report(
         db,
         device.id,
         message_id,
+        attempt,
         "delivered" if event == "sms:delivered" else "failed",
         reason if isinstance(reason, str) else None,
     )

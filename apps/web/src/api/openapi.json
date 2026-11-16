@@ -160,6 +160,10 @@
       },
       "ClaimedMessage": {
         "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -176,7 +180,8 @@
         "required": [
           "id",
           "phone_number",
-          "content"
+          "content",
+          "attempt"
         ],
         "title": "ClaimedMessage",
         "type": "object"
@@ -3381,6 +3386,54 @@
           }
         ],
         "summary": "Reply To Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/{message_id}/retry": {
+      "post": {
+        "description": "Queue a failed outbound message again. It keeps its id and text; the next send counts as the\nnext attempt, which gives it a new id on the phone (``cc-<id>-<n>``), so the phone does not\nrefuse it as one it already has. Only a ``failed`` message can be retried, and a message left\nfailed with \"delivery unknown\" may already have gone out: a person decides, knowing that.",
+        "operationId": "retry_message_messages__message_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Message",
         "tags": [
           "messages"
         ]

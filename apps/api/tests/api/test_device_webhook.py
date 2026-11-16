@@ -238,3 +238,34 @@ def test_other_events_are_acknowledged_and_ignored(client, phone):
 def test_a_signed_body_that_is_not_json_is_a_bad_request(client, phone):
     assert post(client, phone.id, None, raw=b"not json").status_code == 400
     assert post(client, phone.id, None, raw=b"[1,2]").status_code == 400
+
+
+# --- a retried message has a new gateway id; reports for an older attempt are stale ---
+
+
+def retried_event(name, mid, attempt, **payload):
+    e = event(name, mid, **payload)
+    e["payload"]["messageId"] = f"cc-{mid}-{attempt}"
+    return e
+
+
+def test_a_report_for_the_current_attempt_applies(client, conn, phone, db):
+    cid = make_contact(conn, "Eli")
+    mid = make_message(conn, cid, status="sent", gsm_device_id=phone.id, send_attempt=2)
+    post(client, phone.id, retried_event("sms:delivered", mid, 2))
+    assert status_of(db, mid).status == "delivered"
+
+
+def test_a_report_for_an_older_attempt_is_ignored(client, conn, phone, db):
+    cid = make_contact(conn, "Fe")
+    mid = make_message(conn, cid, status="sent", gsm_device_id=phone.id, send_attempt=1)
+    r = post(client, phone.id, event("sms:failed", mid, reason="the first try"))  # cc-<id>: attempt 0
+    assert r.status_code == 200 and r.json()["ignored"] is True
+    assert status_of(db, mid).status == "sent"
+
+
+def test_a_report_for_a_later_attempt_than_the_message_has_is_ignored(client, conn, phone, db):
+    cid = make_contact(conn, "Gus")
+    mid = make_message(conn, cid, status="sent", gsm_device_id=phone.id, send_attempt=1)
+    assert post(client, phone.id, retried_event("sms:delivered", mid, 2)).json()["ignored"] is True
+    assert status_of(db, mid).status == "sent"

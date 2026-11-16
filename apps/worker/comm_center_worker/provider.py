@@ -22,11 +22,16 @@ class InboundSms:
 
 
 class ChannelProvider(Protocol):
-    def send(self, phone_number: str, content: str, message_id: int | None = None) -> None:
+    def send(
+        self, phone_number: str, content: str, message_id: int | None = None, attempt: int = 0
+    ) -> None:
         """Send one message to an E.164 number. Raises ``ProviderError`` on failure.
 
         ``message_id`` is our id for the message. A provider that can use it as an idempotency key,
-        or to match delivery reports later, should (the same id is passed again on a retry)."""
+        or to match delivery reports later, should (the same id is passed again when this worker
+        retries a send whose answer was lost). ``attempt`` is 0 for the first send and n when a
+        person has retried the message n times after a failure: it must change the key, because the
+        channel may remember the earlier ones."""
 
     def poll_inbound(self) -> list[InboundSms]:
         """Messages received and not yet acknowledged. Raises ``ProviderError`` if unreachable."""

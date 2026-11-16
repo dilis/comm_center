@@ -795,6 +795,57 @@ describe("view and delete", () => {
 });
 
 
+describe("retry", () => {
+  const requeued = { ...failed, status: "queued", error_message: null };
+
+  test.each<[Role, boolean]>([
+    ["admin", true],
+    ["operator", true],
+    ["agent", true],
+    ["auditor", false],
+  ])("%s: retry offered on a failed sent message = %s", async (role, offered) => {
+    backend([failed, out, incoming, queued]);
+    await open(role);
+    await screen.findByText("never arrives");
+    expect(!!screen.queryByRole("button", { name: "Retry message 3" })).toBe(offered);
+    for (const id of [1, 2, 4]) expect(screen.queryByRole("button", { name: `Retry message ${id}` })).not.toBeInTheDocument();
+  });
+
+  test("it asks first, then queues the message again and refreshes", async () => {
+    backend([failed]);
+    let retried = false;
+    server.use(http.post("*/api/messages/3/retry", () => ((retried = true), HttpResponse.json(requeued))));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Retry message 3" }));
+    const dialog = await screen.findByRole("dialog", { name: "Retry message" });
+    expect(retried).toBe(false);
+    expect(dialog).toHaveTextContent("no signal"); // why it failed is in front of the person deciding
+    await userEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(retried).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  test("a refusal is shown in the dialog", async () => {
+    backend([failed]);
+    server.use(http.post("*/api/messages/3/retry", () => HttpResponse.json({ detail: "only a failed message can be retried" }, { status: 409 })));
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Retry message 3" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("only a failed message can be retried");
+  });
+
+  test("the details offer it too", async () => {
+    backend([failed]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "View message 3" }));
+    const details = await screen.findByRole("dialog", { name: "Message" });
+    await userEvent.click(within(details).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("dialog", { name: "Retry message" })).toBeInTheDocument();
+  });
+});
+
+
 describe("modem health", () => {
   const device = { id: 1, name: "m1", phone_number: "+639170000000", status: "online", last_error: null, last_error_at: null };
   const devices = (items: unknown[]) => server.use(http.get("*/api/devices", () => HttpResponse.json(items)));

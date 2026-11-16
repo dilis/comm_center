@@ -57,8 +57,8 @@ function Replies({ id }: { id: number }) {
 }
 
 export function MessageDetailDialog({
-  message, onClose, onReply,
-}: { message: Message; onClose: () => void; onReply?: () => void }) {
+  message, onClose, onReply, onRetry,
+}: { message: Message; onClose: () => void; onReply?: () => void; onRetry?: () => void }) {
   const rows: [string, string | null][] = [
     ["Direction", directionLabel(message)],
     ["Owner", message.owner_name],
@@ -93,6 +93,7 @@ export function MessageDetailDialog({
         {message.direction === "inbound" && <Replies id={message.id} />}
         <DialogFooter>
           {onReply && <Button onClick={onReply}>Reply</Button>}
+          {onRetry && <Button onClick={onRetry}>Retry</Button>}
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

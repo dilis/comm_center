@@ -75,6 +75,10 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
     gsm_device_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("gsm_device.id"))
     # Set once at creation, for a reply: the received message it answers.
     reply_to_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("messages.id"))
+    # Outbound only: how many times a person has retried it after a failure. It becomes part of the
+    # id given to the phone (``cc-<id>``, then ``cc-<id>-1``, ...), so a retry is not taken for the
+    # message the phone already has.
+    send_attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     error_message: Mapped[str | None] = mapped_column(Text)

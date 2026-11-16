@@ -5,9 +5,10 @@ hands it an SMS to send. A 2xx answer means the phone accepted the message into 
 that the carrier delivered it; delivery reports, and everything the phone receives, come back to the
 API as signed webhooks (SPECS.md 4.7), not through this class.
 
-We give the phone our message id as the gateway's own message id (``cc-<id>``), so that its
-delivery events can be matched to the message, and so a retry after a lost answer is recognised by
-the phone instead of sending the SMS twice.
+We give the phone our message id as the gateway's own message id (``cc-<id>``, then ``cc-<id>-<n>``
+when a person retries a failed message), so that its delivery events can be matched to the message,
+and so a retry after a lost answer is recognised by the phone instead of sending the SMS twice. A
+person's retry gets a new id, because the phone refuses one it already has.
 
 Inbound is not polled here: the app's ``GET /inbox`` returns only a preview of each message and has
 no way to mark one as handled, so reading it could store truncated text or duplicates. So
@@ -24,8 +25,15 @@ from comm_center_worker.provider import InboundSms, PermanentSendError, Provider
 
 log = logging.getLogger(__name__)
 
-# Keep in step with ``app.dispatch.GATEWAY_ID_PREFIX`` in the API, which reads it back.
+# Keep in step with ``app.dispatch.gateway_message_id`` in the API, which reads it back.
 GATEWAY_ID_PREFIX = "cc-"
+
+
+def gateway_message_id(message_id: int, attempt: int = 0) -> str:
+    """``cc-<id>`` for the first send, ``cc-<id>-<n>`` for a person's n-th retry: the phone refuses
+    an id it already has, so a retry needs a new one."""
+    base = f"{GATEWAY_ID_PREFIX}{message_id}"
+    return base if attempt == 0 else f"{base}-{attempt}"
 
 
 class AndroidGatewayProvider:
@@ -56,10 +64,12 @@ class AndroidGatewayProvider:
             # Only the exception text: it names the problem, never the request body or password.
             raise ProviderError(f"phone unreachable: {exc}") from exc
 
-    def send(self, phone_number: str, content: str, message_id: int | None = None) -> None:
+    def send(
+        self, phone_number: str, content: str, message_id: int | None = None, attempt: int = 0
+    ) -> None:
         body: dict = {"textMessage": {"text": content}, "phoneNumbers": [phone_number]}
         if message_id is not None:
-            body["id"] = f"{GATEWAY_ID_PREFIX}{message_id}"
+            body["id"] = gateway_message_id(message_id, attempt)
         response = self._request("POST", "/message", json=body)
         status = response.status_code
         if response.is_success:

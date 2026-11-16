@@ -46,6 +46,10 @@
       },
       "ClaimedMessage": {
         "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -62,7 +66,8 @@
         "required": [
           "id",
           "phone_number",
-          "content"
+          "content",
+          "attempt"
         ],
         "title": "ClaimedMessage",
         "type": "object"

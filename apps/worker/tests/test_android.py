@@ -39,6 +39,16 @@ def test_send_posts_the_documented_body_with_basic_auth_and_our_message_id():
     }
 
 
+def test_a_retry_is_sent_under_a_new_id_so_the_phone_does_not_refuse_it():
+    seen = []
+    provider = make(lambda r: seen.append(json.loads(r.content)["id"]) or httpx.Response(202))
+    provider.send("+639171234567", "x", message_id=175)
+    provider.send("+639171234567", "x", message_id=175, attempt=0)
+    provider.send("+639171234567", "x", message_id=175, attempt=1)
+    provider.send("+639171234567", "x", message_id=175, attempt=2)
+    assert seen == ["cc-175", "cc-175", "cc-175-1", "cc-175-2"]
+
+
 def test_without_a_message_id_the_phone_picks_its_own():
     seen = []
     make(lambda r: seen.append(json.loads(r.content)) or httpx.Response(200)).send(

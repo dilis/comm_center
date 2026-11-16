@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -29,6 +29,7 @@ type Dialog =
   | { kind: "new" }
   | { kind: "view"; message: Message }
   | { kind: "reply"; message: Message }
+  | { kind: "retry"; message: Message }
   | { kind: "delete"; message: Message }
   | null;
 
@@ -58,6 +59,8 @@ export default function MessagesPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   // Only received messages can be answered, by someone who may create messages.
   const canReply = (m: Message) => m.direction === "inbound" && can("messages:create");
+  // Only a sent message that failed can be put back in the queue, by someone who may create messages.
+  const canRetry = (m: Message) => m.direction === "outbound" && m.status === "failed" && can("messages:create");
   const { q, status } = list.filters;
   const direction: Direction = list.filters.direction === "sent" || list.filters.direction === "received" ? list.filters.direction : "all";
 
@@ -94,6 +97,11 @@ export default function MessagesPage() {
     // tabs pause, and coming back to the tab refreshes at once.
     refetchInterval: (state) => (state.state.data?.items.some(pending) ? POLL.pendingMs : POLL.idleMs),
     refetchOnWindowFocus: true,
+  });
+
+  const retry = useMutation({
+    mutationFn: (message: Message) => unwrap(api.POST("/messages/{message_id}/retry", { params: { path: { message_id: message.id } } })),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages"] }),
   });
 
   const remove = useMutation({
@@ -172,6 +180,11 @@ export default function MessagesPage() {
               <CornerUpLeft className="h-4 w-4" aria-hidden />
             </Button>
           )}
+          {canRetry(m) && (
+            <Button variant="ghost" size="icon" aria-label={`Retry message ${m.id}`} onClick={() => setDialog({ kind: "retry", message: m })}>
+              <RotateCw className="h-4 w-4" aria-hidden />
+            </Button>
+          )}
           {canDeleteMessage(m) && (
             <Button variant="ghost" size="icon" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
               <Trash2 className="h-4 w-4" aria-hidden />
@@ -246,6 +259,16 @@ export default function MessagesPage() {
           message={dialog.message}
           onClose={() => setDialog(null)}
           onReply={canReply(dialog.message) ? () => setDialog({ kind: "reply", message: dialog.message }) : undefined}
+          onRetry={canRetry(dialog.message) ? () => setDialog({ kind: "retry", message: dialog.message }) : undefined}
+        />
+      )}
+      {dialog?.kind === "retry" && (
+        <ConfirmDialog
+          title="Retry message"
+          description={`Queue this message to ${dialog.message.contact_name} again? It failed with: ${dialog.message.error_message ?? "no reason given"}. If the failure says delivery is unknown, the first attempt may already have been sent, and the person could receive it twice.`}
+          confirmLabel="Retry"
+          onConfirm={() => retry.mutateAsync(dialog.message)}
+          onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === "reply" && <ReplyDialog message={dialog.message} onClose={() => setDialog(null)} />}

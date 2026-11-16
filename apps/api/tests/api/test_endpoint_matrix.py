@@ -41,6 +41,7 @@ ALLOWED = {
     "POST /messages/send": {"admin", "operator", "agent"},
     "POST /messages/send-bulk": {"admin", "operator", "agent"},
     "POST /messages/{m}/reply": {"admin", "operator", "agent"},
+    "POST /messages/{m}/retry": {"admin", "operator", "agent"},
     "POST /messages/{m}/read": {"admin", "operator", "agent", "auditor"},
     "GET /messages/{m}": {"admin", "operator", "agent", "auditor"},
     "DELETE /messages/{m}": {"admin"},
@@ -83,6 +84,8 @@ def test_role_against_endpoint(client, conn, role, endpoint):
     message = make_message(conn, victim_contact, owner_id=make_inbound_agent(conn))
     r = call(client, endpoint, auth_header(client, "caller"), victim_contact, victim_user, message)
     if role in ALLOWED[endpoint]:
-        assert r.status_code < 400, (role, endpoint, r.status_code, r.text)
+        # the matrix message is a received one, which cannot be retried: 422 is "authorized, wrong kind"
+        passed = r.status_code == 422 if endpoint.endswith("/retry") else r.status_code < 400
+        assert passed, (role, endpoint, r.status_code, r.text)
     else:
         assert r.status_code == 403, (role, endpoint, r.status_code, r.text)

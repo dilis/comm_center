@@ -130,6 +130,7 @@ class ClaimedMessage(BaseModel):
     id: int
     phone_number: str
     content: str
+    attempt: int  # 0 the first time; n for the n-th retry (it goes into the gateway's message id)
 
 
 class ClaimOut(BaseModel):
@@ -152,7 +153,10 @@ def claim(
         message = dispatch.claim_next(db, device)
         out = (
             ClaimedMessage(
-                id=message.id, phone_number=message.phone_number, content=message.content
+                id=message.id,
+                phone_number=message.phone_number,
+                content=message.content,
+                attempt=message.send_attempt,
             )
             if message
             else None
