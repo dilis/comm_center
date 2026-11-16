@@ -3,10 +3,10 @@
 `apps/api/scripts/import_contacts.py` reads the **`Details`** sheet of an Excel file and creates one
 contact (a person, with one primary phone number) per distinct phone number.
 
-| It reads | Column header (any column position, any letter case) |
-|---|---|
-| Name | `Customer name` |
-| Phone number | `Customer phone` |
+| It reads     | Column header (any column position, any letter case) |
+| ------------ | ---------------------------------------------------- |
+| Name         | `Customer name`                                      |
+| Phone number | `Customer phone`                                     |
 
 Nothing else in the sheet is imported (not the email, the order status or the other columns).
 
@@ -53,6 +53,7 @@ uv sync          # once: installs the Excel reader (openpyxl)
 
 The same thing through pnpm (the quotes matter because the file name has spaces; the path is
 relative to `apps/api`):
+
 ```sh
 pnpm --filter @comm-center/api import-contacts -- "../../Counseling the Heart Registration Count.xlsx" --owner admin --dry-run
 ```
@@ -79,13 +80,13 @@ should create 74 contacts.
 
 ## If it says...
 
-| Message | Meaning |
-|---|---|
-| `no sheet named 'Details'` | The file has no `Details` sheet; the message lists the sheets it found. |
-| `column 'Customer phone' not found` | A header is missing or renamed; the message lists the headers it found. |
-| `no user named 'x'` | `--owner` must be the username of an existing, active person (not a system agent). |
-| `file not found` | Check the path. It is relative to where you run the command (`apps/api`). |
-| `the database refused a row` | Another process added the same number while it ran. Nothing was saved; run it again. |
+| Message                             | Meaning                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| `no sheet named 'Details'`          | The file has no `Details` sheet; the message lists the sheets it found.              |
+| `column 'Customer phone' not found` | A header is missing or renamed; the message lists the headers it found.              |
+| `no user named 'x'`                 | `--owner` must be the username of an existing, active person (not a system agent).   |
+| `file not found`                    | Check the path. It is relative to where you run the command (`apps/api`).            |
+| `the database refused a row`        | Another process added the same number while it ran. Nothing was saved; run it again. |
 
 ## Undoing an import
 
@@ -110,7 +111,7 @@ correct before importing.
    ```
    It writes `first_name,middle_name,last_name,phone,email` (the email is the sheet's `Customer email`; if one number has several emails the first is kept and the rest are noted), one row per distinct number, and prints the
    names it had to guess. The rules: a **middle initial** (`C.`, `S`) is the middle name and
-   *everything before it is the first name* (`Zetha Flosy C. Orpilla` is Zetha Flosy / C. /
+   _everything before it is the first name_ (`Zetha Flosy C. Orpilla` is Zetha Flosy / C. /
    Orpilla); particles (`de`, `dela`) and suffixes (`Jr.`) stay with the last name; a leading `Ms` or
    `Mr` is dropped; ALL CAPS or all lower case words are capitalised; with no initial the first word
    is the first name and the words between it and the last name are the middle name (those are the
@@ -130,3 +131,7 @@ Contacts already imported keep their names: the importer never edits an existing
 them, soft-delete those contacts first (see "Undoing an import").
 
 `*.csv` is in `.gitignore`, like `*.xlsx`.
+
+Dilis:
+ADMIN_PASSWORD='1234567890' pnpm --filter @comm-center/api create-admin --username admin --name "Admin"
+uv run python -m scripts.import_contacts_csv ../../contacts_import.csv --owner admin

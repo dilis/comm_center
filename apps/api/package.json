@@ -12,6 +12,7 @@
     "register-device": "uv run python -m app.cli register-device",
     "ensure-device": "uv run python -m app.cli ensure-device",
     "reset-device-secret": "uv run python -m app.cli reset-device-secret",
+    "configure-android-webhooks": "uv run python -m scripts.configure_android_webhooks",
     "gen:worker-contract": "uv run python -m app.export_worker_contract > ../worker/contract/worker-api.json",
     "import-contacts": "uv run python -m scripts.import_contacts",
     "xlsx-to-csv": "uv run python -m scripts.xlsx_to_csv",

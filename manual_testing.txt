@@ -1,0 +1,174 @@
+1. Migrate and create an admin (once)
+pnpm db:migrate
+ADMIN_PASSWORD='1234567890' pnpm --filter @comm-center/api create-admin --username admin --name "Admin"
+
+2. Start the API
+cd apps/api && uv run uvicorn app.main:app --port 8001
+It also serves interactive docs at http://localhost:8001/docs.
+
+3. Try it (second terminal)
+B=http://localhost:8001
+
+# Log in and keep the tokens (jq is optional; otherwise copy them by hand)
+R=$(curl -s $B/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"a long passphrase"}')
+ACCESS=$(echo $R | jq -r .access_token); REFRESH=$(echo $R | jq -r .refresh_token)
+
+# Profile with groups and effective permissions
+curl -s $B/auth/me -H "Authorization: Bearer $ACCESS" | jq
+
+# Edit your profile
+curl -s -X PATCH $B/auth/me/profile -H "Authorization: Bearer $ACCESS" \
+  -H 'Content-Type: application/json' -d '{"name":"Admin One (edited)","email":"admin@example.com"}' | jq
+
+# Replace your phone numbers (national format is normalized to E.164)
+curl -s -X PUT $B/auth/me/phones -H "Authorization: Bearer $ACCESS" \
+  -H 'Content-Type: application/json' \
+  -d '{"phones":[{"phone":"0917 123 4567","label":"mobile","is_primary":true}]}' | jq
+
+# Change password (revokes all refresh tokens)
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT $B/auth/me/password \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"current_password":"a long passphrase","new_password":"another long passphrase"}'   # 204
+If you change the password, use the new one for later logins.
+
+4. Things worth checking
+# No token -> 401
+curl -s -o /dev/null -w '%{http_code}\n' $B/auth/me
+
+# Wrong password -> 401 "invalid credentials"
+curl -s $B/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"wrong"}'
+
+# Refresh rotates the token; replaying the old one gives 401 and revokes the session
+curl -s $B/auth/refresh -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$REFRESH\"}" | jq -r .access_token
+curl -s -o /dev/null -w '%{http_code}\n' $B/auth/refresh \
+  -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$REFRESH\"}"   # 401
+
+# Logout (204, idempotent)
+curl -s -o /dev/null -w '%{http_code}\n' $B/auth/logout \
+  -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$REFRESH\"}"
+
+# System agents can't log in -> 401
+curl -s -o /dev/null -w '%{http_code}\n' $B/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"system","password":"x"}'
+
+  // phase 3
+  1. Setup (skip what you've already done)
+docker compose up -d --wait
+pnpm db:migrate
+ADMIN_PASSWORD='a long passphrase' pnpm --filter @comm-center/api create-admin --username admin --name "Admin"
+cd apps/api && uv run uvicorn app.main:app --port 8001
+The interactive docs at http://localhost:8001/docs list every new endpoint. Use Authorize there with the access token from the login call.
+
+2. Log in (second terminal)
+B=http://localhost:8001; J='Content-Type: application/json'
+ACCESS=$(curl -s $B/auth/login -H "$J" -d '{"username":"admin","password":"a long passphrase"}' | jq -r .access_token)
+A="Authorization: Bearer $ACCESS"
+
+3. Contacts
+# create with phones (national format is normalized to E.164)
+curl -s -X POST $B/contacts -H "$A" -H "$J" -d '{"name":"Ana Cruz","email":"ana@example.com","phones":[{"phone":"0917 123 4567","label":"mobile","is_primary":true}]}' | jq
+# search by name, email or phone; sort; page
+curl -s "$B/contacts?q=9171234&sort=name&order=desc&page=1&page_size=5" -H "$A" | jq
+# the same number on another contact should give 409
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $B/contacts -H "$A" -H "$J" -d '{"name":"Dup","phones":[{"phone":"+639171234567"}]}'
+# update: omit "phones" to keep the numbers, send a list to replace them
+curl -s -X PUT $B/contacts/2 -H "$A" -H "$J" -d '{"name":"Ana C."}' | jq
+Contact ids are low numbers here, because the seed already holds the system agents' contacts. Use the id returned by the create call.
+
+4. Users
+# create a user with a new contact and the agent group (see group ids in step 5)
+curl -s -X POST $B/users -H "$A" -H "$J" -d '{"username":"bea","password":"another long pass","contact":{"name":"Bea"},"group_ids":[GROUP_ID]}' | jq
+# link an existing contact instead
+curl -s -X POST $B/users -H "$A" -H "$J" -d '{"username":"cy","password":"another long pass","contact_id":CONTACT_ID}' | jq
+curl -s "$B/users?q=bea&is_active=true" -H "$A" | jq
+curl -s -X PUT $B/users/USER_ID -H "$A" -H "$J" -d '{"is_active":false,"email":null}' | jq
+
+5. Groups
+curl -s "$B/groups?page_size=100" -H "$A" | jq '.items[] | {id,name,permissions}'
+
+6. Rules to try deliberately
+- Delete the contact of an active user: DELETE /contacts/<that user's contact_id> returns 409. After DELETE /users/<id> (204), deleting the contact works.
+- Delete or deactivate yourself: DELETE /users/1-style calls on your own id return 409. Your own id is in /auth/me.
+- System agents: GET /users/1 returns 404, and system doesn't appear in the user list.
+- Duplicate username: creating a second bea returns 409. After soft-deleting the first, creating it again works.
+- Roles: create a user with the operator group (password ≥ 10 characters) and log in as that user.
+  - GET /groups and POST /users return 403.
+  - POST /contacts works.
+  - DELETE /contacts/<id> returns 403.
+- Escalation: log in as an operator and try group_ids with admin. It's refused, though operators can't reach POST /users anyway. The automated test covers this with a limited custom group.
+
+If a call fails unexpectedly, check the uvicorn terminal for the traceback.
+
+
+---
+Manual test steps for the worker
+
+These use your dev database and the fake provider, which logs sends instead of transmitting them. Run the commands from the repo root unless a step says otherwise.
+
+1. Setup
+docker compose up -d --wait
+pnpm db:migrate
+ADMIN_PASSWORD='a long passphrase' pnpm --filter @comm-center/api create-admin --username admin   # skip if you already have an admin
+pnpm --filter @comm-center/api register-device --name main --serial-port /dev/ttyFAKE --phone "0917 000 0000"
+- Output: the last command prints registered device 'main' (id N, agent user M).
+- Duplicate name: running it again with the same name prints error: device 'main' already exists.
+- Bad number: --phone 123 prints error: invalid phone number.
+
+2. Start the API and the worker (two terminals)
+# terminal 1
+cd apps/api && uv run uvicorn app.main:app --port 8001
+
+# terminal 2: a throwaway inbox file for fake inbound SMS
+INBOX=/tmp/inbox.jsonl; rm -f $INBOX
+cd apps/api && WORKER_POLL_INTERVAL_SECONDS=0.5 uv run python -m app.worker --provider fake --fake-inbox $INBOX
+- Startup log: the worker should log starting main on /dev/ttyFAKE (fake provider).
+- No device registered: if you start it before registering a device, it exits with code 1 and a message.
+- Provider choice: --provider serial is rejected, because only fake exists.
+
+3. Outbound (third terminal)
+B=http://localhost:8001; J='Content-Type: application/json'
+A="Authorization: Bearer $(curl -s $B/auth/login -H "$J" -d '{"username":"admin","password":"a long passphrase"}' | jq -r .access_token)"
+CID=$(curl -s -X POST $B/contacts -H "$A" -H "$J" -d '{"name":"Ana","phones":[{"phone":"0917 123 4567"}]}' | jq .id)
+MID=$(curl -s -X POST $B/messages/send -H "$A" -H "$J" -d "{\"contact_id\":$CID,\"content\":\"hello\"}" | jq .id)
+sleep 2; curl -s $B/messages/$MID -H "$A" | jq '{status,sent_at,gsm_device_id,error_message}'
+- Message: within about a second it goes from queued to sent, with sent_at set and gsm_device_id equal to your device id.
+- Worker log: it should show fake send to +639171234567: 'hello'.
+- Queue order: stop the worker (Ctrl-C), send three messages, then start it again. They should go out oldest first.
+
+4. Inbound
+echo '{"from":"0918 555 0000","text":"<b>hi</b> from a stranger"}' >> /tmp/inbox.jsonl
+echo '{"from":"0917 123 4567","text":"reply from Ana"}' >> /tmp/inbox.jsonl
+echo '{"from":"GLOBE","text":"promo"}' >> /tmp/inbox.jsonl
+echo 'not json' >> /tmp/inbox.jsonl
+sleep 2
+curl -s "$B/messages?direction=received" -H "$A" | jq '.items[] | {direction,contact_name,phone_number,content,gsm_device_id}'
+curl -s "$B/contacts?q=555" -H "$A" | jq '.items[] | {name,owner_id,phones}'
+curl -s $B/messages/counts -H "$A" | jq
+- Stranger: it appears as inbound, with a new contact named +639185550000. That contact is owned by the device's agent, and the <b> tag comes back as plain text.
+- Known sender: Ana's reply attaches to her existing contact and no new contact is created.
+- Dropped lines: GLOBE is logged as dropping SMS … sender is not a phone number. The malformed line is logged as ignored. Neither stops the worker.
+- Repeat check: wait a few seconds. No message should appear twice.
+
+5. Device status
+docker compose exec db mysql -ucomm_center -pcomm_center comm_center -e "SELECT name,status FROM gsm_device"
+- Running: it shows online.
+- Stopped: after Ctrl-C on the worker it shows offline.
+
+6. Crash recovery
+# stop the worker, then simulate a worker that died mid-send:
+docker compose exec db mysql -ucomm_center -pcomm_center comm_center -e "UPDATE messages SET status='sending', gsm_device_id=1 WHERE id=$MID"
+- Restart: start the worker again. That message becomes failed with worker stopped while sending; delivery unknown.
+- Not re-sent: the worker log shows no send for it.
+- Device id: use your device's id instead of 1 if it differs.
+
+7. Failure paths
+- Retry and backoff: these need a modem failure, which the fake provider can't produce, so the automated tests cover them.
+- Delete before sending: stop the worker, send a message, delete it with DELETE /messages/<id>, and start the worker. It should not be sent.
+- Two workers: start a second worker in another terminal and send about 10 messages. Each should be sent exactly once, and the worker logs together should show 10 sends. This is for a quick look only. In real use, run one worker per set of devices.
+
+8. Compose service (optional)
+docker compose --profile app --profile worker up -d --build --wait
+docker compose --profile app --profile worker ps    # worker (healthy)
+docker compose --profile app --profile worker down
+Register a device first (docker compose exec api /opt/venv/bin/python -m app.cli register-device ...). Otherwise the worker exits with code 1 because it has no device.

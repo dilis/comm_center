@@ -1,0 +1,17 @@
+# Runs the worker against an Android phone (SMS Gateway for Android) instead of the fake provider.
+# Use it on top of the main file:
+#   cp deploy/worker-android.env.example deploy/worker-android.env   # then edit it
+#   docker compose -f docker-compose.yml -f docker-compose.android.yml --profile app up -d --build --wait
+# (or `--profile worker` to start only the worker against an API elsewhere).
+# In the root .env set WORKER_DEVICE (e.g. phone1), WORKER_DEVICE_PHONE, WORKER_SECRET and, if you
+# like, WORKER_SEND_INTERVAL_SECONDS. The phone's address and
+# login live in deploy/worker-android.env (gitignored) and reach this one container only.
+# Also see "Android phones" in docs/DEPLOYMENT.md: the phone must send webhooks to the API to receive.
+services:
+  worker:
+    # No fake inbox: an Android phone's inbound SMS arrive at the API by webhook, not through the worker.
+    command: !override ["/opt/venv/bin/python", "-m", "comm_center_worker"]
+    env_file:
+      - deploy/worker-android.env
+    environment:
+      WORKER_PROVIDER: android
