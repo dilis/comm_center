@@ -75,7 +75,7 @@ export default function MessagesPage() {
   const hasUnread = (counts.data?.unread ?? 0) > 0;
   const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
   const query = useQuery({
-    queryKey: ["messages", "list", list.page, list.pageSize, list.order, q, status, direction],
+    queryKey: ["messages", "list", list.page, list.pageSize, list.order, q, direction === "received" ? "" : status, direction],
     queryFn: () =>
       unwrap(
         api.GET("/messages", {
@@ -86,7 +86,7 @@ export default function MessagesPage() {
               page_size: list.pageSize,
               order: list.order,
               q: q || undefined,
-              status: (status || undefined) as Status | undefined,
+              status: (direction === "received" ? undefined : status || undefined) as Status | undefined,
             },
           },
         }),
@@ -158,7 +158,7 @@ export default function MessagesPage() {
       className: "max-md:order-last", // last in the stacked phone card
       cell: (m) => <p className={cn("line-clamp-2 max-w-md whitespace-pre-wrap break-words", m.unread && "font-semibold")}>{m.content}</p>,
     },
-    {
+    ...(direction === "received" ? [] : [{
       id: "status",
       header: "Status",
       cell: (m) => (
@@ -167,7 +167,7 @@ export default function MessagesPage() {
           {m.error_message && <div className="mt-1 max-w-48 break-words text-xs text-destructive">{m.error_message}</div>}
         </div>
       ),
-    },
+    }] satisfies Column<Message>[]),
     {
       id: "date",
       header: "Date",
@@ -184,33 +184,37 @@ export default function MessagesPage() {
     {
       id: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-right max-md:order-last max-md:mt-1 max-md:border-t max-md:pt-2", // bottom of the stacked phone card
       hideLabelOnMobile: true,
       cell: (m) => (
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-1 max-md:flex-wrap max-md:justify-start">
           <Tip content="View">
-              <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => view(m)}>
+              <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`View message ${m.id}`} onClick={() => view(m)}>
               <Eye className="h-4 w-4" aria-hidden />
+              <span className="md:hidden">View</span>
             </Button>
           </Tip>
           {canReply(m) && (
             <Tip content="Reply">
-                <Button variant="ghost" size="icon" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
+                <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
                 <CornerUpLeft className="h-4 w-4" aria-hidden />
+                <span className="md:hidden">Reply</span>
               </Button>
             </Tip>
           )}
           {canRetry(m) && (
             <Tip content="Retry">
-                <Button variant="ghost" size="icon" aria-label={`Retry message ${m.id}`} onClick={() => setDialog({ kind: "retry", message: m })}>
+                <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`Retry message ${m.id}`} onClick={() => setDialog({ kind: "retry", message: m })}>
                 <RotateCw className="h-4 w-4" aria-hidden />
+                <span className="md:hidden">Retry</span>
               </Button>
             </Tip>
           )}
           {canDeleteMessage(m) && (
             <Tip content="Delete">
-                <Button variant="ghost" size="icon" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
+                <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
                 <Trash2 className="h-4 w-4" aria-hidden />
+                <span className="md:hidden">Delete</span>
               </Button>
             </Tip>
           )}
@@ -245,7 +249,7 @@ export default function MessagesPage() {
           ]}
         />
         <SearchBox label="Search messages" placeholder="Search text or number" value={q} onChange={(v) => list.setFilter("q", v)} />
-        <label className="flex items-center gap-2 text-sm">
+        {direction !== "received" && <label className="flex items-center gap-2 text-sm">
           Status
           <Select className="w-36" value={status} onChange={(e) => list.setFilter("status", e.target.value)}>
             <option value="">All</option>
@@ -255,7 +259,7 @@ export default function MessagesPage() {
               </option>
             ))}
           </Select>
-        </label>
+        </label>}
       </div>
       <DataTable
         label="Messages"

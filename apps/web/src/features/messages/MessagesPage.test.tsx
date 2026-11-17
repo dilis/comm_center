@@ -82,6 +82,21 @@ describe("list", () => {
     expect(screen.queryByRole("img", { name: /^(User|Agent)$/ })).not.toBeInTheDocument();
   });
 
+  test("the Received tab has no Status column or filter, the others do", async () => {
+    backend();
+    await open("admin", "/messages?direction=received");
+    await screen.findByText("hi from Ana");
+    expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Status" })).not.toBeInTheDocument();
+  });
+
+  test("the Sent tab keeps the Status column and filter", async () => {
+    backend();
+    await open("admin", "/messages?direction=sent");
+    expect(await screen.findByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
+  });
+
   test("the owner column is called Owner on the All tab", async () => {
     backend();
     await open();
@@ -318,12 +333,12 @@ describe("live updates", () => {
 
   test("the page, filters and tab you chose are kept across refreshes", async () => {
     backend();
-    await open("admin", "/messages?direction=received&status=received&q=ana&page=2");
+    await open("admin", "/messages?direction=sent&status=failed&q=ana&page=2");
     await screen.findByText("hello Ana");
     const seen = requests.length;
     await waitFor(() => expect(requests.length).toBeGreaterThan(seen + 2)); // several refreshes later
     for (const url of requests) {
-      expect(Object.fromEntries(url.searchParams)).toMatchObject({ direction: "received", status: "received", q: "ana", page: "2" });
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({ direction: "sent", status: "failed", q: "ana", page: "2" });
     }
     expect(screen.getByRole("searchbox", { name: "Search messages" })).toHaveValue("ana");
   });
