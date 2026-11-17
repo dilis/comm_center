@@ -59,8 +59,8 @@ export default function MessagesPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   // Only received messages can be answered, by someone who may create messages.
   const canReply = (m: Message) => m.direction === "inbound" && can("messages:create");
-  // Only a sent message that failed can be put back in the queue, by someone who may create messages.
-  const canRetry = (m: Message) => m.direction === "outbound" && m.status === "failed" && can("messages:create");
+  // Only a sent message that failed, or that the phone has not confirmed yet, can be put back in the queue.
+  const canRetry = (m: Message) => m.direction === "outbound" && (m.status === "failed" || m.status === "sent") && can("messages:create");
   const { q, status } = list.filters;
   const direction: Direction = list.filters.direction === "sent" || list.filters.direction === "received" ? list.filters.direction : "all";
 
@@ -122,7 +122,7 @@ export default function MessagesPage() {
   const columns: Column<Message>[] = [
     {
       id: "contact",
-      header: "Contact",
+      header: direction === "received" ? "From" : direction === "sent" ? "To" : "Contact",
       cell: (m) => (
         <div>
           <div className="flex items-center gap-1.5 font-medium">
@@ -135,7 +135,7 @@ export default function MessagesPage() {
         </div>
       ),
     },
-    { id: "owner", header: direction === "sent" ? "Sender" : "Owner", cell: (m) => m.owner_name },
+    { id: "owner", header: direction === "sent" ? "From" : "--Owner", cell: (m) => m.owner_name },
     {
       id: "content",
       header: "Message",
@@ -172,23 +172,31 @@ export default function MessagesPage() {
       hideLabelOnMobile: true,
       cell: (m) => (
         <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => view(m)}>
-            <Eye className="h-4 w-4" aria-hidden />
-          </Button>
-          {canReply(m) && (
-            <Button variant="ghost" size="icon" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
-              <CornerUpLeft className="h-4 w-4" aria-hidden />
+          <Tip content="View">
+              <Button variant="ghost" size="icon" aria-label={`View message ${m.id}`} onClick={() => view(m)}>
+              <Eye className="h-4 w-4" aria-hidden />
             </Button>
+          </Tip>
+          {canReply(m) && (
+            <Tip content="Reply">
+                <Button variant="ghost" size="icon" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
+                <CornerUpLeft className="h-4 w-4" aria-hidden />
+              </Button>
+            </Tip>
           )}
           {canRetry(m) && (
-            <Button variant="ghost" size="icon" aria-label={`Retry message ${m.id}`} onClick={() => setDialog({ kind: "retry", message: m })}>
-              <RotateCw className="h-4 w-4" aria-hidden />
-            </Button>
+            <Tip content="Retry">
+                <Button variant="ghost" size="icon" aria-label={`Retry message ${m.id}`} onClick={() => setDialog({ kind: "retry", message: m })}>
+                <RotateCw className="h-4 w-4" aria-hidden />
+              </Button>
+            </Tip>
           )}
           {canDeleteMessage(m) && (
-            <Button variant="ghost" size="icon" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </Button>
+            <Tip content="Delete">
+                <Button variant="ghost" size="icon" aria-label={`Delete message ${m.id}`} onClick={() => setDialog({ kind: "delete", message: m })}>
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </Button>
+            </Tip>
           )}
         </div>
       ),
@@ -265,7 +273,7 @@ export default function MessagesPage() {
       {dialog?.kind === "retry" && (
         <ConfirmDialog
           title="Retry message"
-          description={`Queue this message to ${dialog.message.contact_name} again? It failed with: ${dialog.message.error_message ?? "no reason given"}. If the failure says delivery is unknown, the first attempt may already have been sent, and the person could receive it twice.`}
+          description={`Queue this message to ${dialog.message.contact_name} again? ${dialog.message.status === "sent" ? "The phone accepted it but has not confirmed delivery." : `It failed with: ${dialog.message.error_message ?? "no reason given"}.`} The first attempt may already have reached the person, who could then receive it twice.`}
           confirmLabel="Retry"
           onConfirm={() => retry.mutateAsync(dialog.message)}
           onClose={() => setDialog(null)}

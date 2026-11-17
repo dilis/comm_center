@@ -443,8 +443,9 @@ export interface paths {
          * Retry Message
          * @description Queue a failed outbound message again. It keeps its id and text; the next send counts as the
          *     next attempt, which gives it a new id on the phone (``cc-<id>-<n>``), so the phone does not
-         *     refuse it as one it already has. Only a ``failed`` message can be retried, and a message left
-         *     failed with "delivery unknown" may already have gone out: a person decides, knowing that.
+         *     refuse it as one it already has. Only a ``failed`` or ``sent`` message can be retried (``sent``
+         *     means the phone accepted it but has not confirmed delivery), and either may already have gone
+         *     out: a person decides, knowing that.
          */
         post: operations["retry_message_messages__message_id__retry_post"];
         delete?: never;

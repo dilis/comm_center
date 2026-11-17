@@ -64,8 +64,14 @@ def test_every_retry_counts_one_more_attempt(client, conn, h, failed):
     assert row(conn, failed).send_attempt == 2
 
 
-@pytest.mark.parametrize("status", ["queued", "sending", "sent", "delivered"])
-def test_only_a_failed_message_can_be_retried(client, conn, h, boss, ana, status):
+def test_a_sent_message_can_be_retried(client, conn, h, boss, ana):
+    mid = make_message(conn, ana, owner_id=boss, status="sent")
+    assert retry(client, h, mid).status_code == 200
+    assert tuple(row(conn, mid)) == ("queued", None, 1)
+
+
+@pytest.mark.parametrize("status", ["queued", "sending", "delivered"])
+def test_only_a_failed_or_sent_message_can_be_retried(client, conn, h, boss, ana, status):
     mid = make_message(conn, ana, owner_id=boss, status=status)
     r = retry(client, h, mid)
     assert r.status_code == 409, r.text

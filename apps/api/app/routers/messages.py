@@ -382,8 +382,9 @@ def retry_message(
 ) -> MessageOut:
     """Queue a failed outbound message again. It keeps its id and text; the next send counts as the
     next attempt, which gives it a new id on the phone (``cc-<id>-<n>``), so the phone does not
-    refuse it as one it already has. Only a ``failed`` message can be retried, and a message left
-    failed with "delivery unknown" may already have gone out: a person decides, knowing that."""
+    refuse it as one it already has. Only a ``failed`` or ``sent`` message can be retried (``sent``
+    means the phone accepted it but has not confirmed delivery), and either may already have gone
+    out: a person decides, knowing that."""
     message = get_scoped(db, caller, message_id)
     owner = db.execute(
         select(User.is_system, User.agent_direction).where(User.id == message.owner_id),
@@ -396,12 +397,12 @@ def retry_message(
     # One conditional UPDATE, so two people retrying at once queue it once.
     queued = db.execute(
         update(Message)
-        .where(Message.id == message.id, Message.status == "failed")
+        .where(Message.id == message.id, Message.status.in_(("failed", "sent")))
         .values(status="queued", send_attempt=Message.send_attempt + 1, error_message=None)
     )
     if queued.rowcount == 0:
         db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "only a failed message can be retried")
+        raise HTTPException(status.HTTP_409_CONFLICT, "only a failed or sent message can be retried")
     record_activity(db, request, caller.id, "retry", "message", message.id, f"Retried message {message.id}")
     db.commit()
     db.refresh(message)

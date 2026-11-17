@@ -803,12 +803,12 @@ describe("retry", () => {
     ["operator", true],
     ["agent", true],
     ["auditor", false],
-  ])("%s: retry offered on a failed sent message = %s", async (role, offered) => {
+  ])("%s: retry offered on a failed or sent message = %s", async (role, offered) => {
     backend([failed, out, incoming, queued]);
     await open(role);
     await screen.findByText("never arrives");
-    expect(!!screen.queryByRole("button", { name: "Retry message 3" })).toBe(offered);
-    for (const id of [1, 2, 4]) expect(screen.queryByRole("button", { name: `Retry message ${id}` })).not.toBeInTheDocument();
+    for (const id of [1, 3]) expect(!!screen.queryByRole("button", { name: `Retry message ${id}` })).toBe(offered);
+    for (const id of [2, 4]) expect(screen.queryByRole("button", { name: `Retry message ${id}` })).not.toBeInTheDocument();
   });
 
   test("it asks first, then queues the message again and refreshes", async () => {
@@ -827,12 +827,12 @@ describe("retry", () => {
 
   test("a refusal is shown in the dialog", async () => {
     backend([failed]);
-    server.use(http.post("*/api/messages/3/retry", () => HttpResponse.json({ detail: "only a failed message can be retried" }, { status: 409 })));
+    server.use(http.post("*/api/messages/3/retry", () => HttpResponse.json({ detail: "only a failed or sent message can be retried" }, { status: 409 })));
     await open();
     await userEvent.click(await screen.findByRole("button", { name: "Retry message 3" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("only a failed message can be retried");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("only a failed or sent message can be retried");
   });
 
   test("the details offer it too", async () => {
