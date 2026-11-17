@@ -11,11 +11,11 @@ import { POLL } from "./polling";
 import { emptyBackend, page, renderApp, signIn, type Role } from "@/test/utils";
 
 const base = {
-  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", contact_first_name: "Ana", contact_last_name: "Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin", unread: false,
+  channel: "gsm", contact_id: 10, contact_name: "Ana Cruz", contact_first_name: "Ana", contact_last_name: "Cruz", phone_number: "+639171234567", owner_id: 1, owner_name: "Rhea Admin", owner_is_system: false, unread: false,
   gsm_device_id: null, reply_to_id: null, created_at: "2026-11-05T08:00:00", sent_at: null, received_at: null, error_message: null,
 };
 const out = { ...base, id: 1, direction: "outbound", content: "hello Ana", status: "sent", sent_at: "2026-11-05T08:00:05" };
-const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, owner_name: "gsm-modem1", unread: true, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
+const incoming = { ...base, id: 2, direction: "inbound", owner_id: 3, owner_name: "gsm-modem1", owner_is_system: true, unread: true, content: "hi from Ana", status: "received", received_at: "2026-11-05T09:00:00" };
 const failed = { ...base, id: 3, direction: "outbound", content: "never arrives", status: "failed", error_message: "no signal" };
 const queued = { ...base, id: 4, direction: "outbound", content: "waiting", status: "queued" };
 
@@ -65,16 +65,42 @@ describe("list", () => {
     expect(screen.getByText("hi from Ana").closest("tr")).toHaveTextContent("gsm-modem1");
   });
 
+  test("on the All tab a user owner gets a user icon and an agent owner a phone icon; other tabs have none", async () => {
+    backend();
+    await open();
+    const sentRow = (await screen.findByText("hello Ana")).closest("tr")!;
+    expect(within(sentRow).getByRole("img", { name: "User" })).toBeInTheDocument();
+    expect(within(sentRow).queryByRole("img", { name: "Agent" })).not.toBeInTheDocument();
+    const receivedRow = screen.getByText("hi from Ana").closest("tr")!;
+    expect(within(receivedRow).getByRole("img", { name: "Agent" })).toBeInTheDocument();
+  });
+
+  test("the owner icons are not shown on the Sent tab", async () => {
+    backend();
+    await open("admin", "/messages?direction=sent");
+    await screen.findByText("hello Ana");
+    expect(screen.queryByRole("img", { name: /^(User|Agent)$/ })).not.toBeInTheDocument();
+  });
+
   test("the owner column is called Owner on the All tab", async () => {
     backend();
     await open();
     expect(await screen.findByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
   });
 
-  test("the owner column is called Sender on the Sent tab", async () => {
+  test("the columns are To and From on the Sent tab", async () => {
     backend();
     await open("admin", "/messages?direction=sent");
-    expect(await screen.findByRole("columnheader", { name: "Sender" })).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "To" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "From" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Owner" })).not.toBeInTheDocument();
+  });
+
+  test("the columns are From and Device on the Received tab", async () => {
+    backend();
+    await open("admin", "/messages?direction=received");
+    expect(await screen.findByRole("columnheader", { name: "From" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Device" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Owner" })).not.toBeInTheDocument();
   });
 

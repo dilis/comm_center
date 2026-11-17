@@ -979,6 +979,8 @@ export interface components {
             id: number;
             /** Owner Id */
             owner_id: number;
+            /** Owner Is System */
+            owner_is_system: boolean;
             /** Owner Name */
             owner_name: string;
             /** Phone Number */

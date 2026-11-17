@@ -964,6 +964,10 @@
             "title": "Owner Id",
             "type": "integer"
           },
+          "owner_is_system": {
+            "title": "Owner Is System",
+            "type": "boolean"
+          },
           "owner_name": {
             "title": "Owner Name",
             "type": "string"
@@ -1037,6 +1041,7 @@
           "status",
           "owner_id",
           "owner_name",
+          "owner_is_system",
           "unread",
           "gsm_device_id",
           "reply_to_id",

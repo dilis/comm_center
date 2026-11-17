@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Smartphone, Trash2, User } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -135,7 +135,23 @@ export default function MessagesPage() {
         </div>
       ),
     },
-    { id: "owner", header: direction === "sent" ? "From" : "--Owner", cell: (m) => m.owner_name },
+    {
+      id: "owner",
+      header: direction === "sent" ? "From" : direction === "received" ? "Device" : "Owner",
+      cell: (m) =>
+        direction === "all" ? (
+          <span className="flex items-center gap-1.5">
+            {m.owner_is_system ? (
+              <Smartphone className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-400" role="img" aria-label="Agent" />
+            ) : (
+              <User className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" role="img" aria-label="User" />
+            )}
+            {m.owner_name}
+          </span>
+        ) : (
+          m.owner_name
+        ),
+    },
     {
       id: "content",
       header: "Message",

@@ -40,6 +40,7 @@ class MessageOut(BaseModel):
     status: Status
     owner_id: int
     owner_name: str  # the owner's name: the sender, for a sent message
+    owner_is_system: bool  # a system agent (device or notification) rather than a person
     unread: bool  # a received message this caller has not read yet; never true for sent ones
     gsm_device_id: int | None
     reply_to_id: int | None  # for a reply: the received message it answers
@@ -143,6 +144,7 @@ def to_out(db: Session, messages: list[Message], viewer_id: int) -> list[Message
                 contact_first_name=contacts[m.contact_id].first_name,
                 contact_last_name=contacts[m.contact_id].last_name, phone_number=m.phone_number, content=m.content,
                 status=m.status, owner_id=m.owner_id, owner_name=contacts[owner.contact_id].name,
+                owner_is_system=owner.is_system,
                 unread=direction == "inbound" and m.id not in read_ids,
                 # stored for outbound only; for inbound it follows from the receiving agent
                 gsm_device_id=device_by_agent.get(m.owner_id) if direction == "inbound" else m.gsm_device_id,
