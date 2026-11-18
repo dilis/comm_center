@@ -44,7 +44,7 @@ const ReceivedArrow = ({ className }: { className?: string }) => <ArrowDownLeft 
 /** Which way a message went, for the All tab (the other tabs already say). */
 function DirectionArrow({ message }: { message: Message }) {
   return (
-    <span role="img" aria-label={directionLabel(message)} title={directionLabel(message)}>
+    <span className="max-md:hidden" role="img" aria-label={directionLabel(message)} title={directionLabel(message)}>
       {message.direction === "inbound" ? <ReceivedArrow /> : <SentArrow />}
     </span>
   );
@@ -123,6 +123,10 @@ export default function MessagesPage() {
     {
       id: "contact",
       header: direction === "received" ? "From" : direction === "sent" ? "To" : "Contact",
+      // On a phone card the sender leads. For a received message that is this contact (From); for
+      // a sent one it is the owner, and this contact is the receiver (To), second.
+      mobileLabel: (m) => (m.direction === "inbound" ? "From" : "To"),
+      cellClassName: (m) => (m.direction === "inbound" ? "max-md:order-[-2]" : "max-md:order-[-1]"),
       cell: (m) => (
         <div>
           <div className="flex items-center gap-1.5 font-medium">
@@ -138,13 +142,17 @@ export default function MessagesPage() {
     {
       id: "owner",
       header: direction === "sent" ? "From" : direction === "received" ? "Device" : "Owner",
+      // The owner is the sender of a sent message (first, From) and the receiving device of a
+      // received one, which a phone card hides.
+      mobileLabel: () => "From",
+      cellClassName: (m) => (m.direction === "inbound" ? "max-md:hidden" : "max-md:order-[-2]"),
       cell: (m) =>
         direction === "all" ? (
           <span className="flex items-center gap-1.5">
             {m.owner_is_system ? (
-              <Smartphone className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-400" role="img" aria-label="Agent" />
+              <Smartphone className="h-4 w-4 shrink-0 max-md:hidden text-teal-600 dark:text-teal-400" role="img" aria-label="Agent" />
             ) : (
-              <User className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" role="img" aria-label="User" />
+              <User className="h-4 w-4 shrink-0 max-md:hidden text-indigo-600 dark:text-indigo-400" role="img" aria-label="User" />
             )}
             {m.owner_name}
           </span>
