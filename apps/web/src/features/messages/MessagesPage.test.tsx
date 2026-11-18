@@ -924,3 +924,65 @@ describe("modem health", () => {
     expect(asked).toBe(false);
   });
 });
+
+describe("phone card", () => {
+  // Below the md breakpoint each row is a stacked card. The layout is CSS, so what is tested is the
+  // structure it relies on: each cell's label (data-label) and its order or visibility classes.
+  const FIRST = "max-md:order-[-2]";
+  const SECOND = "max-md:order-[-1]";
+  const cellOf = (row: HTMLElement, text: string) => within(row).getByText(text).closest("td")!;
+
+  test("Received: the sender leads, labelled From, and the receiving device is hidden", async () => {
+    backend([incoming], { all: 1, sent: 0, received: 1, unread: 1 });
+    await open("admin", "/messages?direction=received");
+    const row = (await screen.findByText("hi from Ana")).closest("tr")!;
+    const sender = cellOf(row, "Ana Cruz");
+    expect(sender).toHaveAttribute("data-label", "From");
+    expect(sender).toHaveClass(FIRST);
+    expect(cellOf(row, "gsm-modem1")).toHaveClass("max-md:hidden");
+  });
+
+  test("Sent: the sender leads, labelled From, and the receiver follows, labelled To", async () => {
+    backend([out], { all: 1, sent: 1, received: 0, unread: 0 });
+    await open("admin", "/messages?direction=sent");
+    const row = (await screen.findByText("hello Ana")).closest("tr")!;
+    const sender = cellOf(row, "Rhea Admin");
+    expect(sender).toHaveAttribute("data-label", "From");
+    expect(sender).toHaveClass(FIRST);
+    const receiver = cellOf(row, "Ana Cruz");
+    expect(receiver).toHaveAttribute("data-label", "To");
+    expect(receiver).toHaveClass(SECOND);
+    expect(sender).not.toHaveClass("max-md:hidden");
+    expect(receiver).not.toHaveClass("max-md:hidden");
+  });
+
+  test("All: an inbound message shows the sender first and hides the receiver", async () => {
+    backend([out, incoming]);
+    await open();
+    const row = (await screen.findByText("hi from Ana")).closest("tr")!;
+    const sender = cellOf(row, "Ana Cruz");
+    expect(sender).toHaveAttribute("data-label", "From");
+    expect(sender).toHaveClass(FIRST);
+    expect(cellOf(row, "gsm-modem1")).toHaveClass("max-md:hidden");
+  });
+
+  test("All: an outbound message shows the sender first and then the receiver", async () => {
+    backend([out, incoming]);
+    await open();
+    const row = (await screen.findByText("hello Ana")).closest("tr")!;
+    const sender = cellOf(row, "Rhea Admin");
+    expect(sender).toHaveAttribute("data-label", "From");
+    expect(sender).toHaveClass(FIRST);
+    const receiver = cellOf(row, "Ana Cruz");
+    expect(receiver).toHaveAttribute("data-label", "To");
+    expect(receiver).toHaveClass(SECOND);
+  });
+
+  test("the desktop table keeps its own headers", async () => {
+    backend([out, incoming]);
+    await open();
+    await screen.findByText("hello Ana");
+    expect(screen.getByRole("columnheader", { name: "Contact" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
+  });
+});

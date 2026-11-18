@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export type Column<T> = {
@@ -14,6 +15,11 @@ export type Column<T> = {
   className?: string;
   /** Hide the "Header:" label on a stacked (phone) row, e.g. for an actions column. */
   hideLabelOnMobile?: boolean;
+  /** The label on a stacked (phone) row when it depends on the row; defaults to ``header``. */
+  mobileLabel?: (row: T) => string;
+  /** Extra classes for this column's cell in one row (the header keeps ``className``), e.g. to
+   * reorder or hide it on a phone card. */
+  cellClassName?: (row: T) => string | undefined;
 };
 
 export type SortState = { key: string; order: "asc" | "desc" };
@@ -125,7 +131,11 @@ export function DataTable<T>({
             rows.map((row) => (
               <TableRow key={getRowId(row)} className={rowClassName?.(row)}>
                 {columns.map((c) => (
-                  <TableCell key={c.id} className={c.className} data-label={c.hideLabelOnMobile ? undefined : c.header}>
+                  <TableCell
+                    key={c.id}
+                    className={cn(c.className, c.cellClassName?.(row))}
+                    data-label={c.hideLabelOnMobile ? undefined : (c.mobileLabel?.(row) ?? c.header)}
+                  >
                     {c.cell(row)}
                   </TableCell>
                 ))}
