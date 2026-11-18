@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import push_outbox
 from app.models import Contact, ContactPhone, GsmDevice, InboundRef, Message
 from app.phones import normalize_e164
 
@@ -67,6 +68,16 @@ def ingest_message(
     return message
 
 
+def _queue_push(db: Session, message: Message) -> None:
+    """Queue the staff notification in the same transaction as the message (so a restart cannot lose
+    it). Whatever goes wrong here must never cost us the SMS itself."""
+    try:
+        with db.begin_nested():
+            push_outbox.enqueue_inbound(db, message)
+    except Exception:
+        log.exception("could not queue the push notification for message %s", message.id)
+
+
 @dataclass(frozen=True)
 class Stored:
     stored: bool  # a message was added
@@ -117,6 +128,8 @@ def store_inbound(
         if dup is None:
             raise
         return dup
+    if message is not None:
+        _queue_push(db, message)
     db.commit()
     return Stored(
         stored=message is not None, duplicate=False, message_id=message.id if message else None

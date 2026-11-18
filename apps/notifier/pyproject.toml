@@ -1,0 +1,25 @@
+[project]
+name = "comm-center-notifier"
+version = "0.1.0"
+description = "Sends Comm Center's push notifications from the outbox table. Shares only that table with the API."
+requires-python = ">=3.12"
+dependencies = [
+  "pymysql>=1.1",
+  "cryptography>=43",
+  "pydantic-settings>=2.4",
+  "pywebpush>=2.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["db: needs a running MySQL (integration test)"]
+
+[tool.ruff]
+line-length = 100

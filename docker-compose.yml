@@ -30,6 +30,11 @@ services:
       # Derives each Android phone's webhook signing key (`app.cli webhook-info`).
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-only-webhook-secret-change-me-dev-only}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Push notifications for staff: the API needs only the public key (empty means off), and
+      # how long a notification waits so messages arriving together join it. The private key is
+      # the notifier's (see docs/DEPLOYMENT.md).
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      PUSH_AGGREGATE_SECONDS: ${PUSH_AGGREGATE_SECONDS:-5}
       # Believe the web container's X-Forwarded-For, so login rate limiting sees each visitor's
       # address rather than nginx's. Safe only while nothing untrusted can reach the API port
       # directly: see "Login rate limiting" in docs/DEPLOYMENT.md.
@@ -94,6 +99,27 @@ services:
     depends_on:
       worker-setup:
         condition: service_completed_successfully
+
+  # Sends the push notifications the API queued in the push_outbox table (see docs/DEPLOYMENT.md,
+  # Push notifications). Its own image and program: it shares only that table with the API, so it
+  # can be replaced. Run exactly one. Without the VAPID keys it idles. The image has a HEALTHCHECK
+  # (its heartbeat file is touched every cycle).
+  notifier:
+    profiles: ["app"]
+    build: ./apps/notifier
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-comm_center}:${MYSQL_PASSWORD:-comm_center}@db:3306/${MYSQL_DATABASE:-comm_center}
+    #   VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+    #   VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+    #   VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+    #   PUSH_MAX_ATTEMPTS: ${PUSH_MAX_ATTEMPTS:-6}
+    #   PUSH_RETRY_BASE_SECONDS: ${PUSH_RETRY_BASE_SECONDS:-30}
+    #   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    env_file:
+      - deploy/notifier.env
+    depends_on:
+      api:
+        condition: service_healthy  # the API's migrations create the tables it reads
 
   web:
     profiles: ["app"]

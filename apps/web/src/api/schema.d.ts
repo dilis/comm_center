@@ -115,6 +115,35 @@ export interface paths {
         patch: operations["update_profile_auth_me_profile_patch"];
         trace?: never;
     };
+    "/auth/me/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Push Config
+         * @description Whether notifications are set up, and the public key a browser needs to subscribe.
+         */
+        get: operations["push_config_auth_me_push_get"];
+        /**
+         * Push Subscribe
+         * @description Allow this browser to notify the caller. Idempotent; a browser that was subscribed as someone
+         *     else moves to the caller (one browser, one endpoint).
+         */
+        put: operations["push_subscribe_auth_me_push_put"];
+        post?: never;
+        /**
+         * Push Unsubscribe
+         * @description Stop notifying this browser. Only the caller's own subscription; an unknown one is ignored.
+         */
+        delete: operations["push_unsubscribe_auth_me_push_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/refresh": {
         parameters: {
             query?: never;
@@ -1114,6 +1143,31 @@ export interface components {
             /** Middle Name */
             middle_name?: string | null;
         };
+        /** PushConfigOut */
+        PushConfigOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Public Key */
+            public_key: string | null;
+        };
+        /** PushKeys */
+        PushKeys: {
+            /** Auth */
+            auth: string;
+            /** P256Dh */
+            p256dh: string;
+        };
+        /** PushSubscribe */
+        PushSubscribe: {
+            /** Endpoint */
+            endpoint: string;
+            keys: components["schemas"]["PushKeys"];
+        };
+        /** PushUnsubscribe */
+        PushUnsubscribe: {
+            /** Endpoint */
+            endpoint: string;
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
@@ -1473,6 +1527,88 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_config_auth_me_push_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushConfigOut"];
+                };
+            };
+        };
+    };
+    push_subscribe_auth_me_push_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscribe"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_unsubscribe_auth_me_push_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushUnsubscribe"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

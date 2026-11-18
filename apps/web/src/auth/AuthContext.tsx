@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { api, setSessionExpiredHandler, unwrap } from "@/api/client";
 import type { components } from "@/api/schema";
+import { dropForSignOut } from "@/push/push";
 
 import { canActOnRow, canAny, canDeleteMessage, hasPermission, type PermissionSet } from "./permissions";
 import { clearSession, getRefreshToken, refreshSession, setSession } from "./tokens";
@@ -76,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    await dropForSignOut(); // while the access token still works
     const refreshToken = getRefreshToken();
     if (refreshToken) {
       // Best effort: the local session ends either way.

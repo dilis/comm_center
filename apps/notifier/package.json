@@ -1,0 +1,11 @@
+{
+  "name": "@comm-center/notifier",
+  "private": true,
+  "scripts": {
+    "start": "uv run python -m comm_center_notifier",
+    "lint": "uv run ruff check .",
+    "test": "uv run pytest",
+    "test:unit": "uv run pytest -m 'not db'",
+    "test:integration": "uv run pytest -m db"
+  }
+}

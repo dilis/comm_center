@@ -2,11 +2,11 @@ import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app import login_limits, security
+from app import login_limits, push, security
 from app.audit import client_ip, record_activity, record_login
 from app.authz import AuthUser
 from app.clock import utcnow
@@ -14,7 +14,7 @@ from app.config import settings
 from app.contact_ops import replace_phones as replace_contact_phones
 from app.db import get_db
 from app.deps import can_log_in, get_current_user, get_current_user_row, unauthorized
-from app.models import Contact, ContactPhone, RefreshToken, User
+from app.models import Contact, ContactPhone, PushSubscription, RefreshToken, User
 from app.schemas import PartialNameParts, PhoneIn, PhoneOut
 
 log = logging.getLogger(__name__)
@@ -280,4 +280,88 @@ def change_password(
     _revoke_all(db, user.id)  # other sessions must log in again
     record_activity(db, request, user.id, "change_password", "account", user.id, "Changed own password")
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class PushConfigOut(BaseModel):
+    enabled: bool
+    public_key: str | None  # what the browser subscribes with; none when push is not set up
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=255)
+    auth: str = Field(min_length=1, max_length=255)
+
+
+def _https_endpoint(value: str) -> str:
+    if not value.startswith("https://") or " " in value or len(value) > 2048:
+        raise ValueError("endpoint must be an https URL")
+    return value
+
+
+class PushSubscribe(BaseModel):
+    endpoint: str
+    keys: PushKeys
+
+    @field_validator("endpoint")
+    @classmethod
+    def _check(cls, value: str) -> str:
+        return _https_endpoint(value)
+
+
+class PushUnsubscribe(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
+
+
+@router.get("/me/push", response_model=PushConfigOut)
+def push_config(_: AuthUser = Depends(get_current_user)) -> PushConfigOut:
+    """Whether notifications are set up, and the public key a browser needs to subscribe."""
+    enabled = push.push_enabled()
+    return PushConfigOut(enabled=enabled, public_key=settings.vapid_public_key if enabled else None)
+
+
+@router.put("/me/push", status_code=status.HTTP_204_NO_CONTENT)
+def push_subscribe(
+    body: PushSubscribe,
+    request: Request,
+    user: User = Depends(get_current_user_row),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Allow this browser to notify the caller. Idempotent; a browser that was subscribed as someone
+    else moves to the caller (one browser, one endpoint)."""
+    if not push.push_enabled():
+        raise HTTPException(status.HTTP_409_CONFLICT, "push notifications are not set up")
+    digest = push.endpoint_hash(body.endpoint)
+    row = db.scalars(
+        select(PushSubscription).where(PushSubscription.endpoint_hash == digest)
+    ).one_or_none()
+    if row is None:
+        row = PushSubscription(endpoint=body.endpoint, endpoint_hash=digest)
+        db.add(row)
+    row.user_id = user.id
+    row.p256dh, row.auth = body.keys.p256dh, body.keys.auth
+    row.user_agent = (request.headers.get("user-agent") or "")[:255] or None
+    record_activity(db, request, user.id, "subscribe", "push", user.id, "Turned on notifications")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/me/push", status_code=status.HTTP_204_NO_CONTENT)
+def push_unsubscribe(
+    body: PushUnsubscribe,
+    request: Request,
+    user: User = Depends(get_current_user_row),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Stop notifying this browser. Only the caller's own subscription; an unknown one is ignored."""
+    row = db.scalars(
+        select(PushSubscription).where(
+            PushSubscription.endpoint_hash == push.endpoint_hash(body.endpoint),
+            PushSubscription.user_id == user.id,
+        )
+    ).one_or_none()
+    if row is not None:
+        db.delete(row)
+        record_activity(db, request, user.id, "unsubscribe", "push", user.id, "Turned off notifications")
+        db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
