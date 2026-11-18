@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { NotificationsSection } from "./NotificationsSection";
+
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border bg-card p-4 sm:p-5">
@@ -221,7 +223,7 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
 }
 
 export default function ProfilePage() {
-  const { me, setMe, logout } = useAuth();
+  const { me, setMe, logout, canAny } = useAuth();
   if (!me) return null;
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -240,6 +242,11 @@ export default function ProfilePage() {
       <Section title="Phone numbers">
         <PhonesForm me={me} onSaved={setMe} />
       </Section>
+      {canAny(["messages:read_all", "messages:read_received"]) && (
+        <Section title="Notifications">
+          <NotificationsSection />
+        </Section>
+      )}
       <Section title="Password" description="Changing your password signs you out everywhere, including here.">
         <PasswordForm onChanged={() => void logout()} />
       </Section>

@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     worker_lease_seconds: int = 120
     worker_long_poll_seconds: int = 20
 
+    # Web Push for staff (see docs/DEPLOYMENT.md). The API needs only the public key (it is what a
+    # browser subscribes with); the private key and the subject belong to the notifier. Make a pair
+    # with `python -m app.cli vapid-keys`. Empty means the feature is off.
+    vapid_public_key: str = ""
+    # A new notification waits this long, so messages arriving together join it (the notifier
+    # sends it when it is due).
+    push_aggregate_seconds: int = 5
+
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
 
 

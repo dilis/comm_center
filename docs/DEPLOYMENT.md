@@ -23,6 +23,10 @@ The same few variables drive every mode.
 | `DATABASE_URL` | API | SQLAlchemy URL, `mysql+pymysql://USER:PASSWORD@HOST:PORT/DATABASE` | the dev values on `127.0.0.1:3307` |
 | `JWT_SECRET` | API | Signs access and refresh tokens; use a long random value outside development (`openssl rand -hex 32`). Changing it logs everyone out. | a dev-only value |
 | `WEBHOOK_SECRET` | API | Derives each Android phone's webhook signing key (`app.cli webhook-info` prints it); use a long random value outside development. Changing it means re-entering the key in every phone. | a dev-only value |
+| `VAPID_PUBLIC_KEY` | API and notifier | Turns on push notifications for staff (see [Push notifications](#push-notifications)); it is the key browsers subscribe with. Empty means the feature is off. | empty (off) |
+| `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Notifier only | Sign the pushes, and identify this server to the push services (`mailto:` or `https:`). The API never sees the private key. | empty |
+| `PUSH_AGGREGATE_SECONDS` | API | How long a new notification waits so messages arriving together join it | `5` |
+| `PUSH_MAX_ATTEMPTS`, `PUSH_RETRY_BASE_SECONDS`, `NOTIFIER_POLL_SECONDS`, `NOTIFIER_LEASE_SECONDS`, `NOTIFIER_HEARTBEAT_FILE` | Notifier | Sends tried before giving up, the first retry delay (doubles each time), the wait between looks at the outbox, how long a send may take before it is assumed dead, and the file touched every cycle for healthchecks | `6`, `30`, `1`, `60`, `/tmp/comm-center-notifier.heartbeat` |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `DEFAULT_PHONE_REGION` | API | Optional: token lifetimes and the region used to read phone numbers typed without a country code | `900`, `604800`, `PH` |
 | `WORKER_API_URL`, `WORKER_NAME`, `WORKER_SECRET` | Worker | Where the worker finds the API, and the account it signs in with, which is its device's agent `gsm-<device name>` (see [Worker](#worker)). Set a long random secret outside development. Compose derives `WORKER_NAME` from `WORKER_DEVICE` and uses `WORKER_SECRET` to create the device. | `http://127.0.0.1:8000`, none, none (compose: `gsm-fake` and a dev-only secret) |
 | `WORKER_ANDROID_TIMEOUT_SECONDS` | Worker | How long to wait for an Android phone to answer a request | `15` |
@@ -260,6 +264,33 @@ How the API treats webhooks:
 - **Received** (`sms:received`): stored through the same path as any inbound SMS. The webhook answers 200 only after the commit; the app retries anything else for days. Each event is stored once (by the event id), so a retry creates no duplicate. A sender that is not a phone number is acknowledged and dropped.
 - **Delivery** (`sms:delivered`, `sms:failed`): matched to our message by the id we give the gateway (`cc-<message id>`), and applied only to a message of that same phone that is `sending` or `sent`. `delivered` and `failed` are final. A `sent` report from the worker never overwrites one the phone already made. Events for ids that are not ours are acknowledged and ignored.
 - **Errors:** a bad or stale signature, an unknown device gets the same 401. A signed body that is not a valid event gets 400. Everything else (pings, MMS, batches) gets 200 and is ignored.
+
+## Push notifications
+
+Staff who can see received messages (`messages:read_all` or `messages:read_received`) can get a notification on their phone when an SMS arrives. It says who it is from, never what it says. Only received messages trigger one (not failed sends). It uses Web Push, so the Pi only makes outbound HTTPS calls to the browsers' push services; nothing changes in a Cloudflare tunnel.
+
+**Two programs.** The API only queues: when it stores a received message it writes a row per subscribed browser to the `push_outbox` table, in the same transaction, so a restart cannot lose it. The **notifier** (`apps/notifier`, its own image and container) reads that table and talks to the push services. They share only the two tables `push_subscription` and `push_outbox`, described in `apps/notifier/contract/outbox.sql` (the API's tests fail if the tables and that file drift apart), so the notifier can be replaced by anything that follows the same rules. The notifier looks at the outbox every second (MySQL has nothing like PostgreSQL's `LISTEN`, and the query is a cheap indexed read). Run exactly one notifier. It needs the database (a user limited to those two tables is enough: SELECT, UPDATE and DELETE on `push_outbox`; SELECT and DELETE on `push_subscription`), outbound internet access and the private key, which the API never has.
+
+- **Aggregation:** a notification waits `PUSH_AGGREGATE_SECONDS` (5) before it is sent. Messages arriving meanwhile, or while a retry is waiting, join it: "3 new messages, from Maria, Jose and others". A message arriving while one is being sent starts its own.
+- **Retries:** a temporary failure (network, timeout, 429, 5xx) is tried again after `PUSH_RETRY_BASE_SECONDS` (30), then double that, and so on up to `PUSH_MAX_ATTEMPTS` (6, about 15 minutes in all), then given up and logged. Other recipients are always sent first. A refusal that would repeat (400, 401, 403, 413) is logged and not retried; a subscription the service has forgotten (404, 410) is deleted.
+- **Crashes:** if the notifier dies mid-send, the row is sent again once its lease (`NOTIFIER_LEASE_SECONDS`, 60) runs out. A notification can arrive twice that way; the phone replaces the first.
+- **Healthcheck:** the notifier touches its heartbeat file every cycle, and its image has a `HEALTHCHECK`. Without the private key and subject it runs and idles.
+
+Setup:
+
+1. Make a key pair, once: `cd apps/api && uv run python -m app.cli vapid-keys` (or `docker compose run --rm api /opt/venv/bin/python -m app.cli vapid-keys`).
+2. Give the **public** key to the API (`VAPID_PUBLIC_KEY`), and all three values (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`, a contact such as `mailto:you@example.com`) to the notifier: `.env` for compose, `deploy/api.env` and `deploy/notifier.env` otherwise. Restart both. New keys make every existing subscription useless (the push services answer 403, which is logged and not retried), so keep the private key.
+3. Compose starts the notifier with the rest of the stack (`pnpm docker:up`). Without compose: `docker build -t comm-center-notifier apps/notifier`, then `docker run -d --name cc-notifier --network comm-center --env-file deploy/notifier.env comm-center-notifier`; or natively `pnpm --filter @comm-center/notifier start`.
+4. Each person opens **My profile** on the device and presses **Turn on notifications**. Subscriptions are per browser, and signing out turns them off for that browser.
+
+Things to know:
+
+- **HTTPS is required** by browsers. A Cloudflare tunnel provides it; plain `http://` on the LAN will not work (except `localhost`).
+- **iPhone:** iOS 16.4 or later, and the app must first be added to the Home Screen (Share, then Add to Home Screen) and opened from there.
+- **Cloudflare Access:** if it sits in front of the site, add a bypass policy for `/sw.js`, `/manifest.webmanifest` and the icons (`/icon-*.png`, `/icon.svg`). Otherwise the browser gets a login page instead of the service worker and cannot register it.
+- **nginx:** the web image's CSP already allows the service worker (`worker-src 'self'`, `manifest-src 'self'`). A reverse proxy of your own must not strip it or serve `/sw.js` from a cache.
+- **The Pi's clock** must be right (NTP): push services reject requests signed with a wrong time, which looks like a 4xx in the notifier's log.
+- **Seeing failures:** `docker compose logs notifier` shows each retry, give-up and rejection. Pending work is in `push_outbox`.
 
 ## Troubleshooting
 

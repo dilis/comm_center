@@ -1,5 +1,5 @@
-"""Admin commands: ``create-admin``, ``register-device``, ``ensure-device``, ``reset-device-secret``
-and ``webhook-info`` (``python -m app.cli --help``)."""
+"""Admin commands: ``create-admin``, ``register-device``, ``ensure-device``, ``reset-device-secret``,
+``webhook-info`` and ``vapid-keys`` (``python -m app.cli --help``)."""
 
 import argparse
 import getpass
@@ -61,7 +61,19 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="the public https address of the API as the phone reaches it, e.g. https://sms.example.com/api",
     )
+    sub.add_parser("vapid-keys", help="print a new key pair for push notifications")
     args = parser.parse_args(argv)
+
+    if args.command == "vapid-keys":
+        from app.push import new_vapid_keys
+
+        public, private = new_vapid_keys()
+        print("The API needs only the public key; the notifier needs all three (docs/DEPLOYMENT.md):")
+        print(f"VAPID_PUBLIC_KEY={public}")
+        print(f"VAPID_PRIVATE_KEY={private}")
+        print("VAPID_SUBJECT=mailto:you@example.com   # a contact for the push services")
+        print("Keep the private key secret; new keys make every existing subscription useless.")
+        return 0
 
     if args.command == "register-device":
         secret = new_secret()
