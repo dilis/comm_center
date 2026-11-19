@@ -231,6 +231,52 @@ export default function MessagesPage() {
     },
   ];
 
+  const cellOf = (id: string, m: Message) => columns.find((c) => c.id === id)!.cell(m);
+
+  // The All tab reads like a chat: received on the left, sent on the right.
+  const bubbles = (rows: Message[]) => (
+    <div className="space-y-3">
+      {rows.map((m) => {
+        const mine = m.direction === "outbound";
+        // Sent bubbles are filled, so their secondary text is a tint of white, not the page's grey.
+        const soft = mine ? "text-sky-100" : "text-muted-foreground";
+        return (
+          <div key={m.id} role="listitem" className={cn("flex flex-col gap-1", mine ? "items-end justify-end" : "items-start justify-start", mine && pending(m) && "opacity-60")}>
+            {/* A received message's sender sits above its bubble; a sent one is from us, so only the recipient shows, inside. */}
+            {!mine && (
+              <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-xs text-muted-foreground">
+                {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
+                <span className="font-medium text-foreground">{m.contact_name}</span>
+                <span>{m.phone_number}</span>
+              </div>
+            )}
+            <div
+              className={cn(
+                "flex max-w-[85%] flex-col gap-1 rounded-2xl px-4 py-2.5 shadow-sm md:max-w-[65%]",
+                mine ? "rounded-br-sm bg-sky-600 text-white dark:bg-sky-700" : "rounded-bl-sm bg-muted text-foreground",
+              )}
+            >
+              {mine && (
+                <div className={cn("flex flex-wrap items-baseline gap-x-2 text-xs", soft)}>
+                  <span className="font-medium text-white">To {m.contact_name}</span>
+                  <span>{m.phone_number}</span>
+                </div>
+              )}
+              {m.reply_to_id != null && <div className={cn("text-xs", soft)}>Reply to #{m.reply_to_id}</div>}
+              <p className={cn("whitespace-pre-wrap break-words", m.unread && "font-semibold")}>{m.content}</p>
+              <div className={cn("flex flex-wrap items-center gap-2 text-xs", soft)}>
+                {cellOf("date", m)}
+                {mine && <Badge variant={STATUS_VARIANT[m.status]}>{m.status}</Badge>}
+              </div>
+              {m.error_message && <div className={cn("break-words text-xs", mine ? "font-medium text-red-100" : "text-destructive")}>{m.error_message}</div>}
+              <div className={cn("-mx-2", mine && "[&_button]:text-white [&_button:hover]:bg-white/20")}>{cellOf("actions", m)}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <>
       <PageHeader
@@ -285,6 +331,7 @@ export default function MessagesPage() {
         getRowId={(m) => m.id}
         // Outgoing messages the modem has not finished with are dimmed until they are sent.
         rowClassName={(m) => (m.direction === "outbound" && pending(m) ? "opacity-60" : undefined)}
+        renderList={direction === "all" ? bubbles : undefined}
         onPageChange={list.setPage}
         onPageSizeChange={list.setPageSize}
         onSortChange={(_, order) => list.setSort("created_at", order)}

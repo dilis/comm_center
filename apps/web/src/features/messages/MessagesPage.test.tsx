@@ -43,36 +43,30 @@ async function open(role: Role | string[] = "admin", url = "/messages") {
 beforeEach(() => emptyBackend());
 
 describe("list", () => {
-  test("shows direction, contact, content and status", async () => {
+  test("the All tab is a chat: received bubbles on the left, sent ones on the right", async () => {
     backend();
     await open();
-    const row = (await screen.findByText("hello Ana")).closest("tr")!;
-    expect(within(row).getByRole("img", { name: "Sent" })).toBeInTheDocument(); // the arrow
-    expect(within(row).getByText("Ana Cruz")).toBeInTheDocument();
-    expect(within(row).getByText("+639171234567")).toBeInTheDocument();
-    expect(within(screen.getByText("hi from Ana").closest("tr")!).getByRole("img", { name: "Received" })).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "Direction" })).not.toBeInTheDocument();
-    const failedRow = screen.getByText("never arrives").closest("tr")!;
-    expect(failedRow).toHaveTextContent("failed");
-    expect(failedRow).toHaveTextContent("no signal");
+    const sent = (await screen.findByText("hello Ana")).closest("[role='listitem']")!;
+    const received = screen.getByText("hi from Ana").closest("[role='listitem']")!;
+    expect(sent).toHaveClass("justify-end");
+    expect(received).toHaveClass("justify-start");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("shows who owns each message (the sender, for sent ones)", async () => {
+  test("a bubble shows the contact, number and status; sent ones leave out the sender, who is us", async () => {
     backend();
     await open();
-    const row = (await screen.findByText("hello Ana")).closest("tr")!;
-    expect(within(row).getByText("Rhea Admin")).toBeInTheDocument();
-    expect(screen.getByText("hi from Ana").closest("tr")).toHaveTextContent("gsm-modem1");
-  });
-
-  test("on the All tab a user owner gets a user icon and an agent owner a phone icon; other tabs have none", async () => {
-    backend();
-    await open();
-    const sentRow = (await screen.findByText("hello Ana")).closest("tr")!;
-    expect(within(sentRow).getByRole("img", { name: "User" })).toBeInTheDocument();
-    expect(within(sentRow).queryByRole("img", { name: "Agent" })).not.toBeInTheDocument();
-    const receivedRow = screen.getByText("hi from Ana").closest("tr")!;
-    expect(within(receivedRow).getByRole("img", { name: "Agent" })).toBeInTheDocument();
+    const sent = (await screen.findByText("hello Ana")).closest("[role='listitem']") as HTMLElement;
+    expect(sent).toHaveTextContent("To Ana Cruz");
+    expect(sent).toHaveTextContent("+639171234567");
+    expect(sent).not.toHaveTextContent("Rhea Admin");
+    expect(sent).toHaveTextContent("sent");
+    const received = screen.getByText("hi from Ana").closest("[role='listitem']") as HTMLElement;
+    expect(received).toHaveTextContent("Ana Cruz");
+    expect(received).not.toHaveTextContent("gsm-modem1");
+    const failedBubble = screen.getByText("never arrives").closest("[role='listitem']") as HTMLElement;
+    expect(failedBubble).toHaveTextContent("failed");
+    expect(failedBubble).toHaveTextContent("no signal");
   });
 
   test("the owner icons are not shown on the Sent tab", async () => {
@@ -95,12 +89,6 @@ describe("list", () => {
     await open("admin", "/messages?direction=sent");
     expect(await screen.findByRole("columnheader", { name: "Status" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
-  });
-
-  test("the owner column is called Owner on the All tab", async () => {
-    backend();
-    await open();
-    expect(await screen.findByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
   });
 
   test("the columns are To and From on the Sent tab", async () => {
@@ -197,10 +185,10 @@ describe("list", () => {
     const recent = { ...out, id: 20, content: "just sent", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
     backend([recent, { ...out, id: 21, content: "ancient", created_at: "2020-01-02T03:04:05" }]);
     await open();
-    const row = (await screen.findByText("just sent")).closest("tr")!;
+    const row = (await screen.findByText("just sent")).closest<HTMLElement>("tr, [role='listitem']")!;
     await userEvent.hover(within(row).getByText("5 minutes ago"));
     expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent(formatDateTime(recent.created_at));
-    const old = screen.getByText("ancient").closest("tr")!;
+    const old = screen.getByText("ancient").closest<HTMLElement>("tr, [role='listitem']")!;
     expect(within(old).getByText(/2020/)).toBeInTheDocument();
   });
 
@@ -208,7 +196,7 @@ describe("list", () => {
     const recent = { ...out, id: 23, content: "passing by", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
     backend([recent]);
     await open();
-    const date = within((await screen.findByText("passing by")).closest("tr")!).getByText("5 minutes ago");
+    const date = within((await screen.findByText("passing by")).closest<HTMLElement>("tr, [role='listitem']")!).getByText("5 minutes ago");
     await userEvent.hover(date);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(); // not at once...
     expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toBeInTheDocument(); // ...only after resting
@@ -218,7 +206,7 @@ describe("list", () => {
     const recent = { ...out, id: 22, content: "tab to me", created_at: new Date(Date.now() - 2 * 3_600_000).toISOString().replace("Z", "") };
     backend([recent]);
     await open();
-    const row = (await screen.findByText("tab to me")).closest("tr")!;
+    const row = (await screen.findByText("tab to me")).closest<HTMLElement>("tr, [role='listitem']")!;
     within(row).getByText("2 hours ago").focus();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(formatDateTime(recent.created_at));
   });
@@ -229,7 +217,7 @@ describe("list", () => {
     backend([queued, sending, out, failed, receivedQueuedLooking]);
     await open();
     await screen.findByText("waiting");
-    const row = (text: string) => screen.getByText(text).closest("tr")!;
+    const row = (text: string) => screen.getByText(text).closest<HTMLElement>("tr, [role='listitem']")!;
     expect(row("waiting")).toHaveClass("opacity-60");
     expect(row("on its way")).toHaveClass("opacity-60");
     for (const text of ["hello Ana", "never arrives", "inbound"]) expect(row(text)).not.toHaveClass("opacity-60");
@@ -249,7 +237,7 @@ describe("list", () => {
     const readIncoming = { ...incoming, id: 9, content: "already read", unread: false };
     backend([out, incoming, readIncoming]);
     await open();
-    const row = (text: string) => screen.getByText(text).closest("tr")!;
+    const row = (text: string) => screen.getByText(text).closest<HTMLElement>("tr, [role='listitem']")!;
     await screen.findByText("hi from Ana");
     expect(screen.getByText("hi from Ana")).toHaveClass("font-semibold");
     expect(within(row("hi from Ana")).getByRole("img", { name: "Unread" })).toBeInTheDocument();
@@ -270,7 +258,7 @@ describe("list", () => {
     await userEvent.click(screen.getByRole("button", { name: "View message 2" }));
     await waitFor(() => expect(marked).toBe(1));
     await waitFor(() => expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument());
-    expect(screen.getByText("hi from Ana", { selector: "p.line-clamp-2" })).not.toHaveClass("font-semibold");
+    expect(within(screen.getByRole("list", { name: "Messages", hidden: true })).getByText("hi from Ana")).not.toHaveClass("font-semibold");
   });
 
   test("opening a message that is already read does not ask the server again", async () => {
@@ -286,7 +274,7 @@ describe("list", () => {
 
   test("the date column flips the sort order", async () => {
     backend();
-    await open();
+    await open("admin", "/messages?direction=sent");
     await screen.findByText("hello Ana");
     await userEvent.click(within(screen.getByRole("columnheader", { name: /Date/ })).getByRole("button"));
     await waitFor(() => expect(lastQuery()).toMatchObject({ order: "asc" }));
@@ -350,7 +338,7 @@ describe("live updates", () => {
       http.get("*/api/messages", () => HttpResponse.json(page([++calls < 3 ? queued : { ...queued, status: "sent" }]))),
     );
     await open();
-    const table = () => within(screen.getByRole("table", { name: "Messages" }));
+    const table = () => within(screen.getByRole("list", { name: "Messages" }));
     expect(await screen.findByText("queued")).toBeInTheDocument();
     await waitFor(() => expect(table().getByText("sent")).toBeInTheDocument());
   });
@@ -731,9 +719,9 @@ describe("reply", () => {
   test("a reply is marked in the list", async () => {
     backend([answer, original]);
     await open();
-    const row = (await screen.findByText("Yes!")).closest("tr")!;
+    const row = (await screen.findByText("Yes!")).closest<HTMLElement>("tr, [role='listitem']")!;
     expect(row).toHaveTextContent("Reply to #2");
-    expect(screen.getByText("Are you coming <b>Sunday</b>?").closest("tr")).not.toHaveTextContent("Reply to");
+    expect(screen.getByText("Are you coming <b>Sunday</b>?").closest<HTMLElement>("tr, [role='listitem']")).not.toHaveTextContent("Reply to");
   });
 
   test("a reply's details show the message it answers", async () => {
@@ -935,7 +923,7 @@ describe("phone card", () => {
   test("Received: the sender leads, labelled From, and the receiving device is hidden", async () => {
     backend([incoming], { all: 1, sent: 0, received: 1, unread: 1 });
     await open("admin", "/messages?direction=received");
-    const row = (await screen.findByText("hi from Ana")).closest("tr")!;
+    const row = (await screen.findByText("hi from Ana")).closest<HTMLElement>("tr, [role='listitem']")!;
     const sender = cellOf(row, "Ana Cruz");
     expect(sender).toHaveAttribute("data-label", "From");
     expect(sender).toHaveClass(FIRST);
@@ -945,7 +933,7 @@ describe("phone card", () => {
   test("Sent: the sender leads, labelled From, and the receiver follows, labelled To", async () => {
     backend([out], { all: 1, sent: 1, received: 0, unread: 0 });
     await open("admin", "/messages?direction=sent");
-    const row = (await screen.findByText("hello Ana")).closest("tr")!;
+    const row = (await screen.findByText("hello Ana")).closest<HTMLElement>("tr, [role='listitem']")!;
     const sender = cellOf(row, "Rhea Admin");
     expect(sender).toHaveAttribute("data-label", "From");
     expect(sender).toHaveClass(FIRST);
@@ -956,33 +944,11 @@ describe("phone card", () => {
     expect(receiver).not.toHaveClass("max-md:hidden");
   });
 
-  test("All: an inbound message shows the sender first and hides the receiver", async () => {
-    backend([out, incoming]);
-    await open();
-    const row = (await screen.findByText("hi from Ana")).closest("tr")!;
-    const sender = cellOf(row, "Ana Cruz");
-    expect(sender).toHaveAttribute("data-label", "From");
-    expect(sender).toHaveClass(FIRST);
-    expect(cellOf(row, "gsm-modem1")).toHaveClass("max-md:hidden");
-  });
-
-  test("All: an outbound message shows the sender first and then the receiver", async () => {
-    backend([out, incoming]);
-    await open();
-    const row = (await screen.findByText("hello Ana")).closest("tr")!;
-    const sender = cellOf(row, "Rhea Admin");
-    expect(sender).toHaveAttribute("data-label", "From");
-    expect(sender).toHaveClass(FIRST);
-    const receiver = cellOf(row, "Ana Cruz");
-    expect(receiver).toHaveAttribute("data-label", "To");
-    expect(receiver).toHaveClass(SECOND);
-  });
-
-  test("the desktop table keeps its own headers", async () => {
+  test("All: bubbles are not a table, so there is nothing to stack", async () => {
     backend([out, incoming]);
     await open();
     await screen.findByText("hello Ana");
-    expect(screen.getByRole("columnheader", { name: "Contact" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Owner" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Messages" })).toBeInTheDocument();
   });
 });
