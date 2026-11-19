@@ -42,12 +42,14 @@ type Props<T> = {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   onSortChange?: (key: string, order: "asc" | "desc") => void;
+  /** Show the rows through this instead of the table (e.g. chat bubbles); paging and states stay. */
+  renderList?: (rows: T[]) => ReactNode;
 };
 
 /** Server-driven table: the parent owns page, size and sort and fetches accordingly. */
 export function DataTable<T>({
   label, columns, rows, total, page, pageSize, sort, isLoading, error, emptyMessage = "Nothing to show.",
-  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange,
+  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange, renderList,
 }: Props<T>) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -98,6 +100,17 @@ export function DataTable<T>({
           </Select>
         </label>
       )}
+      {renderList ? (
+        error ? (
+          <p role="alert" className="py-8 text-center text-destructive">{error}</p>
+        ) : isLoading ? (
+          <p className="py-8 text-center text-muted-foreground">Loading…</p>
+        ) : rows && rows.length > 0 ? (
+          <div aria-label={label} role="list">{renderList(rows)}</div>
+        ) : (
+          <p className="py-8 text-center text-muted-foreground">{emptyMessage}</p>
+        )
+      ) : (
       <Table aria-label={label}>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -150,6 +163,7 @@ export function DataTable<T>({
           )}
         </TableBody>
       </Table>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{total === 0 ? "No results" : `Showing ${first}–${last} of ${total}`}</span>
         <div className="flex flex-wrap items-center gap-3">
