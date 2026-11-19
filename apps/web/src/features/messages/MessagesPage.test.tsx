@@ -53,13 +53,14 @@ describe("list", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("a bubble shows the contact, number and status; sent ones leave out the sender, who is us", async () => {
+  test("a bubble shows the contact, number and status; sent ones name the sender outside the bubble", async () => {
     backend();
     await open();
     const sent = (await screen.findByText("hello Ana")).closest("[role='listitem']") as HTMLElement;
     expect(sent).toHaveTextContent("To Ana Cruz");
     expect(sent).toHaveTextContent("+639171234567");
-    expect(sent).not.toHaveTextContent("Rhea Admin");
+    expect(sent).toHaveTextContent("Rhea Admin"); // the sender, above the bubble
+    expect(sent.querySelector("p")!.parentElement).not.toHaveTextContent("Rhea Admin"); // not inside it
     expect(sent).toHaveTextContent("sent");
     const received = screen.getByText("hi from Ana").closest("[role='listitem']") as HTMLElement;
     expect(received).toHaveTextContent("Ana Cruz");

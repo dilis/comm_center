@@ -242,14 +242,18 @@ export default function MessagesPage() {
         const soft = mine ? "text-sky-100" : "text-muted-foreground";
         return (
           <div key={m.id} role="listitem" className={cn("flex flex-col gap-1", mine ? "items-end justify-end" : "items-start justify-start", mine && pending(m) && "opacity-60")}>
-            {/* A received message's sender sits above its bubble; a sent one is from us, so only the recipient shows, inside. */}
-            {!mine && (
-              <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-xs text-muted-foreground">
-                {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
-                <span className="font-medium text-foreground">{m.contact_name}</span>
-                <span>{m.phone_number}</span>
-              </div>
-            )}
+            {/* The sender sits above the bubble: the contact for a received message, our own user for a sent one (whose recipient is shown inside). */}
+            <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-xs text-muted-foreground">
+              {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
+              {mine ? (
+                <span className="font-medium text-foreground">{m.owner_name}</span>
+              ) : (
+                <>
+                  <span className="font-medium text-foreground">{m.contact_name}</span>
+                  <span>{m.phone_number}</span>
+                </>
+              )}
+            </div>
             <div
               className={cn(
                 "flex max-w-[85%] flex-col gap-1 rounded-2xl px-4 py-2.5 shadow-sm md:max-w-[65%]",
