@@ -4,7 +4,10 @@ import { api, unwrap } from "@/api/client";
 import type { components } from "@/api/schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { canShare, shareText } from "@/lib/share";
 import { formatDateTime } from "@/lib/utils";
+
+import { forwardText } from "./forward";
 
 export type Message = components["schemas"]["MessageOut"];
 
@@ -94,6 +97,7 @@ export function MessageDetailDialog({
         <DialogFooter>
           {onReply && <Button onClick={onReply}>Reply</Button>}
           {onRetry && <Button onClick={onRetry}>Retry</Button>}
+          {canShare() && <Button variant="outline" onClick={() => void shareText(forwardText(message))}>Share</Button>}
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

@@ -953,3 +953,52 @@ describe("phone card", () => {
     expect(screen.getByRole("list", { name: "Messages" })).toBeInTheDocument();
   });
 });
+
+describe("share", () => {
+  const msg = { ...incoming, id: 2, content: "Are you coming <b>Sunday</b>?" };
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "share");
+  });
+
+  test("no share button when the browser has no share sheet", async () => {
+    backend([msg]);
+    await open();
+    await screen.findByText("Are you coming <b>Sunday</b>?");
+    expect(screen.queryByRole("button", { name: "Share message 2" })).not.toBeInTheDocument();
+  });
+
+  test("the button opens the share sheet with the message wrapped as a forwarded SMS", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { value: share, configurable: true });
+    backend([msg]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Share message 2" }));
+    const text = share.mock.calls[0][0].text as string;
+    expect(text.split("\n")[0]).toBe("--- Forwarded SMS ---");
+    expect(text).toContain("From: ");
+    expect(text).toContain("Received: ");
+    expect(text).toContain("\n\nAre you coming <b>Sunday</b>?\n");
+    expect(text.endsWith("--- End of forwarded SMS ---")).toBe(true);
+  });
+
+  test("a sent message says who it was sent to", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { value: share, configurable: true });
+    backend([{ ...out, contact_name: "Ben Reyes", phone_number: "+639170000001" }]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: `Share message ${out.id}` }));
+    const text = share.mock.calls[0][0].text as string;
+    expect(text).toContain("To: Ben Reyes (+639170000001)");
+    expect(text).toContain("Sent: ");
+  });
+
+  test("dismissing the sheet is not an error", async () => {
+    const share = vi.fn().mockRejectedValue(new DOMException("closed", "AbortError"));
+    Object.defineProperty(navigator, "share", { value: share, configurable: true });
+    backend([msg]);
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "Share message 2" }));
+    expect(share).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});

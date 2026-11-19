@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Smartphone, Trash2, User } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Share2, Smartphone, Trash2, User } from "lucide-react";
 import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -13,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { Tip } from "@/components/ui/tooltip";
+import { canShare, shareText } from "@/lib/share";
 import { useListParams } from "@/lib/useListParams";
 import { cn, formatDateTime, formatRelative } from "@/lib/utils";
 
 import { POLL } from "./polling";
 import { DeviceAlert } from "./DeviceAlert";
 import { MessageDetailDialog, directionLabel, type Message } from "./MessageDetailDialog";
+import { forwardText } from "./forward";
 import { ReplyDialog } from "./ReplyDialog";
 import { SendMessageDialog } from "./SendMessageDialog";
 
@@ -207,6 +209,14 @@ export default function MessagesPage() {
                 <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`Reply to message ${m.id}`} onClick={() => setDialog({ kind: "reply", message: m })}>
                 <CornerUpLeft className="h-4 w-4" aria-hidden />
                 <span className="md:hidden">Reply</span>
+              </Button>
+            </Tip>
+          )}
+          {canShare() && (
+            <Tip content="Share">
+              <Button variant="ghost" size="icon" className="max-md:w-auto max-md:gap-1.5 max-md:px-3" aria-label={`Share message ${m.id}`} onClick={() => void shareText(forwardText(m))}>
+                <Share2 className="h-4 w-4" aria-hidden />
+                <span className="md:hidden">Share</span>
               </Button>
             </Tip>
           )}
