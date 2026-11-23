@@ -125,11 +125,44 @@ describe("list", () => {
     expect(tab("All 1/3").querySelector("svg")).toBeNull();
   });
 
-  test("asks for the newest first, on the All tab", async () => {
+  test("fetches the newest slice first, on the All tab", async () => {
     backend();
     await open();
     await screen.findByText("hello Ana");
-    expect(lastQuery()).toMatchObject({ direction: "all", order: "desc", page: "1", page_size: "20" });
+    expect(lastQuery()).toMatchObject({ direction: "all", order: "desc", page: "1", page_size: "30" });
+  });
+
+  test("shows the oldest message at the top and the newest at the bottom", async () => {
+    backend([failed, incoming, out]); // the server sends newest first
+    await open();
+    await screen.findByText("hello Ana");
+    const order = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+    expect(order[0]).toContain("hello Ana");
+    expect(order[2]).toContain("never arrives");
+  });
+
+  test("scrolling to the top loads the next older slice", async () => {
+    const newer = Array.from({ length: 30 }, (_, i) => ({ ...out, id: 100 + i, content: `new ${i}` }));
+    const older = [{ ...out, id: 1, content: "the oldest one" }];
+    requests = [];
+    server.use(
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 31, sent: 31, received: 0, unread: 0 })),
+      http.get("*/api/messages", ({ request }) => {
+        const url = new URL(request.url);
+        requests.push(url);
+        return HttpResponse.json({ ...page(url.searchParams.get("page") === "2" ? older : newer), total: 31 });
+      }),
+    );
+    await open();
+    await screen.findByText("new 0");
+    expect(screen.queryByText("the oldest one")).not.toBeInTheDocument();
+    const feed = screen.getByRole("list", { name: "Messages" }).parentElement!;
+    fireEvent.scroll(feed, { target: { scrollTop: 0 } });
+    expect(await screen.findByText("the oldest one")).toBeInTheDocument();
+    expect(requests.map((u) => u.searchParams.get("page"))).toContain("2");
+    // and it sits above the newer ones
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("the oldest one");
   });
 
   test("All and Received show unread out of total, Sent shows just its total", async () => {
@@ -273,14 +306,6 @@ describe("list", () => {
     expect(marked).toBe(0);
   });
 
-  test("the date column flips the sort order", async () => {
-    backend();
-    await open("admin", "/messages?direction=sent");
-    await screen.findByText("hello Ana");
-    await userEvent.click(within(screen.getByRole("columnheader", { name: /Date/ })).getByRole("button"));
-    await waitFor(() => expect(lastQuery()).toMatchObject({ order: "asc" }));
-  });
-
   test("message content is untrusted: shown as text, with line breaks kept", async () => {
     backend([{ ...incoming, content: "<script>alert(1)</script>\n<b>bold?</b>" }]);
     await open();
@@ -322,12 +347,12 @@ describe("live updates", () => {
 
   test("the page, filters and tab you chose are kept across refreshes", async () => {
     backend();
-    await open("admin", "/messages?direction=sent&status=failed&q=ana&page=2");
+    await open("admin", "/messages?direction=sent&status=failed&q=ana");
     await screen.findByText("hello Ana");
     const seen = requests.length;
     await waitFor(() => expect(requests.length).toBeGreaterThan(seen + 2)); // several refreshes later
     for (const url of requests) {
-      expect(Object.fromEntries(url.searchParams)).toMatchObject({ direction: "sent", status: "failed", q: "ana", page: "2" });
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({ direction: "sent", status: "failed", q: "ana", page: "1" });
     }
     expect(screen.getByRole("searchbox", { name: "Search messages" })).toHaveValue("ana");
   });

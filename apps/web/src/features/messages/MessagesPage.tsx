@@ -1,6 +1,6 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Share2, Smartphone, Trash2, User } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -52,6 +52,9 @@ function DirectionArrow({ message }: { message: Message }) {
   );
 }
 
+/** Messages fetched per request while scrolling back through the log. */
+const FEED_PAGE_SIZE = 30;
+
 const pending = (m: Message) => m.status === "queued" || m.status === "sending";
 
 export default function MessagesPage() {
@@ -76,30 +79,42 @@ export default function MessagesPage() {
   // "<unread>/<total>" for the tabs that hold received messages.
   const hasUnread = (counts.data?.unread ?? 0) > 0;
   const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
-  const query = useQuery({
-    queryKey: ["messages", "list", list.page, list.pageSize, list.order, q, direction === "received" ? "" : status, direction],
-    queryFn: () =>
+  // The server returns newest first; each request fetches the next older slice. The page shows
+  // them oldest first, so the newest message is at the bottom.
+  const query = useInfiniteQuery({
+    queryKey: ["messages", "list", q, direction === "received" ? "" : status, direction],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
       unwrap(
         api.GET("/messages", {
           params: {
             query: {
               direction,
-              page: list.page,
-              page_size: list.pageSize,
-              order: list.order,
+              page: pageParam,
+              page_size: FEED_PAGE_SIZE,
+              order: "desc",
               q: q || undefined,
               status: (direction === "received" ? undefined : status || undefined) as Status | undefined,
             },
           },
         }),
       ),
+    getNextPageParam: (last, all) => (all.length * FEED_PAGE_SIZE < last.total ? all.length + 1 : undefined),
     placeholderData: keepPreviousData,
     // Keep checking: quickly while something is still being sent (statuses change every few
     // seconds), and slowly otherwise so received messages appear without a reload. Background
     // tabs pause, and coming back to the tab refreshes at once.
-    refetchInterval: (state) => (state.state.data?.items.some(pending) ? POLL.pendingMs : POLL.idleMs),
+    refetchInterval: (state) => (state.state.data?.pages.some((p) => p.items.some(pending)) ? POLL.pendingMs : POLL.idleMs),
     refetchOnWindowFocus: true,
   });
+  const rows = useMemo(() => {
+    if (!query.data) return undefined;
+    // A message arriving between two requests shifts the slices, so the same one can come twice.
+    const byId = new Map<number, Message>();
+    for (const p of query.data.pages) for (const m of p.items) byId.set(m.id, m);
+    return [...byId.values()].reverse();
+  }, [query.data]);
+  const total = query.data?.pages[0]?.total ?? 0;
 
   const retry = useMutation({
     mutationFn: (message: Message) => unwrap(api.POST("/messages/{message_id}/retry", { params: { path: { message_id: message.id } } })),
@@ -181,8 +196,7 @@ export default function MessagesPage() {
     {
       id: "date",
       header: "Date",
-      sortKey: "created_at",
-      // Humanized for scanning; the exact time is on hover and in the message's details.
+            // Humanized for scanning; the exact time is on hover and in the message's details.
       cell: (m) => (
         <Tip content={formatDateTime(m.created_at)}>
           <time dateTime={m.created_at} tabIndex={0} className="cursor-default underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
@@ -333,11 +347,8 @@ export default function MessagesPage() {
         fill
         label="Messages"
         columns={columns}
-        rows={query.data?.items}
-        total={query.data?.total ?? 0}
-        page={list.page}
-        pageSize={list.pageSize}
-        sort={{ key: "created_at", order: list.order }}
+        rows={rows}
+        total={total}
         isLoading={query.isPending}
         // A failed background refresh keeps the rows already on screen; only a first load (or a
         // new filter with nothing to show yet) reports the error in the table.
@@ -347,9 +358,12 @@ export default function MessagesPage() {
         // Outgoing messages the modem has not finished with are dimmed until they are sent.
         rowClassName={(m) => (m.direction === "outbound" && pending(m) ? "opacity-60" : undefined)}
         renderList={direction === "all" ? bubbles : undefined}
-        onPageChange={list.setPage}
-        onPageSizeChange={list.setPageSize}
-        onSortChange={(_, order) => list.setSort("created_at", order)}
+        feed={{
+          hasMore: !!query.hasNextPage,
+          isLoadingMore: query.isFetchingNextPage,
+          onLoadMore: () => void query.fetchNextPage(),
+          resetKey: `${direction}|${q}|${direction === "received" ? "" : status}`,
+        }}
       />
       {dialog?.kind === "new" && <SendMessageDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === "view" && (

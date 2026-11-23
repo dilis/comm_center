@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -30,8 +30,8 @@ type Props<T> = {
   columns: Column<T>[];
   rows: T[] | undefined;
   total: number;
-  page: number;
-  pageSize: number;
+  page?: number;
+  pageSize?: number;
   sort?: SortState;
   isLoading?: boolean;
   error?: string | null;
@@ -39,19 +39,32 @@ type Props<T> = {
   getRowId: (row: T) => string | number;
   /** Extra classes for one row, e.g. to grey it out. */
   rowClassName?: (row: T) => string | undefined;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (size: number) => void;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
   onSortChange?: (key: string, order: "asc" | "desc") => void;
   /** Show the rows through this instead of the table (e.g. chat bubbles); paging and states stay. */
   renderList?: (rows: T[]) => ReactNode;
   /** Fill the parent's height: the rows scroll while the sort bar and pager stay put. */
   fill?: boolean;
+  /**
+   * Show the rows as a feed instead of pages: ``rows`` are oldest first, the view starts at the
+   * bottom (newest) and scrolling up near the top loads older rows. Replaces the pager.
+   */
+  feed?: {
+    hasMore: boolean;
+    isLoadingMore: boolean;
+    onLoadMore: () => void;
+    /** Changes when the feed shows a different list (a new filter), so the view jumps to the bottom again. */
+    resetKey: string;
+  };
 };
+
+const EDGE_PX = 120;
 
 /** Server-driven table: the parent owns page, size and sort and fetches accordingly. */
 export function DataTable<T>({
-  label, columns, rows, total, page, pageSize, sort, isLoading, error, emptyMessage = "Nothing to show.",
-  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange, renderList, fill,
+  label, columns, rows, total, page = 1, pageSize = 20, sort, isLoading, error, emptyMessage = "Nothing to show.",
+  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange, renderList, fill, feed,
 }: Props<T>) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -59,10 +72,43 @@ export function DataTable<T>({
 
   // After deleting the last row of the last page, step back instead of showing an empty page.
   useEffect(() => {
-    if (!isLoading && !error && rows && rows.length === 0 && total > 0 && page > pages) {
-      onPageChange(pages);
+    if (!feed && !isLoading && !error && rows && rows.length === 0 && total > 0 && page > pages) {
+      onPageChange?.(pages);
     }
-  }, [isLoading, error, rows, total, page, pages, onPageChange]);
+  }, [feed, isLoading, error, rows, total, page, pages, onPageChange]);
+
+  // Feed scrolling: start at the newest row, keep the view still when older rows are added above
+  // it, and follow new rows only while the reader is already at the bottom.
+  const scroller = useRef<HTMLDivElement>(null);
+  const seen = useRef<{ key: string; first: string | number | undefined; height: number; atBottom: boolean }>({ key: "", first: undefined, height: 0, atBottom: true });
+  const firstId = rows && rows.length > 0 ? getRowId(rows[0]) : undefined;
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!feed || !el || !rows || rows.length === 0) return;
+    const before = seen.current;
+    if (before.key !== feed.resetKey) {
+      el.scrollTop = el.scrollHeight;
+    } else if (before.first !== undefined && firstId !== before.first) {
+      el.scrollTop += el.scrollHeight - before.height; // older rows arrived above
+    } else if (before.atBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+    seen.current = { key: feed.resetKey, first: firstId, height: el.scrollHeight, atBottom: before.key !== feed.resetKey || before.atBottom };
+  });
+  const loadMore = feed?.onLoadMore;
+  const canLoad = !!feed && feed.hasMore && !feed.isLoadingMore && !error;
+  function onScroll() {
+    const el = scroller.current;
+    if (!el) return;
+    seen.current.atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < EDGE_PX;
+    seen.current.height = el.scrollHeight;
+    if (canLoad && el.scrollTop < EDGE_PX) loadMore?.();
+  }
+  // A first page too short to scroll would never trigger onScroll, so keep loading until it fills.
+  useEffect(() => {
+    const el = scroller.current;
+    if (canLoad && el && el.clientHeight > 0 && el.scrollHeight <= el.clientHeight) loadMore?.();
+  });
 
   const sortable = columns.filter((c) => c.sortKey);
 
@@ -102,7 +148,8 @@ export function DataTable<T>({
           </Select>
         </label>
       )}
-      <div className={cn(fill && "min-h-0 flex-1 overflow-y-auto")}>
+      <div ref={scroller} onScroll={feed ? onScroll : undefined} className={cn(fill && "min-h-0 flex-1 overflow-y-auto")}>
+      {feed?.isLoadingMore && <p className="py-2 text-center text-xs text-muted-foreground">Loading older messages…</p>}
       {renderList ? (
         error ? (
           <p role="alert" className="py-8 text-center text-destructive">{error}</p>
@@ -168,6 +215,9 @@ export function DataTable<T>({
       </Table>
       )}
       </div>
+      {feed ? (
+        <div className="shrink-0 text-sm text-muted-foreground">{total === 0 ? "No results" : `Showing ${rows?.length ?? 0} of ${total}`}</div>
+      ) : (
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{total === 0 ? "No results" : `Showing ${first}–${last} of ${total}`}</span>
         <div className="flex flex-wrap items-center gap-3">
@@ -176,7 +226,7 @@ export function DataTable<T>({
             <Select
               className="h-8 w-20"
               value={pageSize}
-              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
             >
               {PAGE_SIZES.map((n) => (
                 <option key={n} value={n}>
@@ -188,14 +238,15 @@ export function DataTable<T>({
           <span>
             Page {page} of {pages}
           </span>
-          <Button variant="outline" size="sm" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+          <Button variant="outline" size="sm" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>
             Previous
           </Button>
-          <Button variant="outline" size="sm" aria-label="Next page" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>
+          <Button variant="outline" size="sm" aria-label="Next page" disabled={page >= pages} onClick={() => onPageChange?.(page + 1)}>
             Next
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }
