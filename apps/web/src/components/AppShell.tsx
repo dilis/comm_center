@@ -31,8 +31,8 @@ export default function AppShell() {
   const { me, logout } = useAuth();
   const pages = useAllowedPages();
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-x-8 gap-y-2 border-b-2 border-accent-line bg-brand px-4 py-3 text-brand-foreground shadow-sm sm:px-6">
+    <div className="flex h-dvh flex-col">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-8 gap-y-2 border-b-2 border-accent-line bg-brand px-4 py-3 text-brand-foreground shadow-sm sm:px-6">
         <span className="text-sm font-semibold uppercase tracking-[0.14em]">Comm Center</span>
         <nav aria-label="Main" className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
           {pages.map((p) => (
@@ -70,8 +70,11 @@ export default function AppShell() {
           </Button>
         </div>
       </header>
-      <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 p-4 sm:p-6">
-        <Outlet />
+      <main className="group/main min-h-0 flex-1 overflow-y-auto has-[.fill]:overflow-hidden">
+        {/* Pages scroll here by default; a page that wants fixed chrome fills this box with `h-full` and scrolls its own list. */}
+        <div className="mx-auto flex min-h-full w-full group-has-[.fill]/main:h-full min-w-0 max-w-7xl flex-col p-4 sm:p-6 [&>.fill]:min-h-0 [&>.fill]:flex-1">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

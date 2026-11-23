@@ -292,7 +292,7 @@ export default function MessagesPage() {
   );
 
   return (
-    <>
+    <div className="fill flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Messages"
         actions={
@@ -305,7 +305,7 @@ export default function MessagesPage() {
         }
       />
       <DeviceAlert />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
         <Tabs
           label="Direction"
           value={direction}
@@ -330,6 +330,7 @@ export default function MessagesPage() {
         </label>}
       </div>
       <DataTable
+        fill
         label="Messages"
         columns={columns}
         rows={query.data?.items}
@@ -378,6 +379,6 @@ export default function MessagesPage() {
           onClose={() => setDialog(null)}
         />
       )}
-    </>
+    </div>
   );
 }

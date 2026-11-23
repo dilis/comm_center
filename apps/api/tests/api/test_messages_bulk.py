@@ -202,3 +202,34 @@ def test_bulk_messages_are_flagged_bulk_and_a_single_send_is_not(client, h, conn
     r = client.post("/messages/send", json={"contact_id": ana, "content": "hi"}, headers=h)
     assert r.status_code == 201, r.text
     assert _bulk_flags(conn) == [1, 1, 0]
+
+
+def test_a_single_send_is_listed_after_the_last_sent_message_not_after_the_queued_bulk(client, h, conn):
+    ana = person(conn, "Ana", "+639171111111")
+    ben = person(conn, "Ben", "+639173333333")
+    done = client.post("/messages/send", json={"contact_id": ana, "content": "done"}, headers=h).json()
+    conn.execute(text("UPDATE messages SET status='sent' WHERE id=:i"), {"i": done["id"]})
+    queued = bulk(client, h, [ana, ben]).json()["queued"]
+    single = client.post("/messages/send", json={"contact_id": ben, "content": "now"}, headers=h).json()
+    for order, expected in (
+        ("asc", [done["id"], single["id"], *[m["id"] for m in queued]]),
+        ("desc", [*[m["id"] for m in reversed(queued)], single["id"], done["id"]]),
+    ):
+        items = client.get("/messages", params={"order": order}, headers=h).json()["items"]
+        assert [m["id"] for m in items] == expected
+
+
+def test_a_sent_single_message_keeps_its_place_once_the_bulk_behind_it_is_sent(client, h, conn):
+    ana = person(conn, "Ana", "+639171111111")
+    ben = person(conn, "Ben", "+639173333333")
+    done = client.post("/messages/send", json={"contact_id": ana, "content": "done"}, headers=h).json()
+    queued = bulk(client, h, [ana, ben]).json()["queued"]
+    single = client.post("/messages/send", json={"contact_id": ben, "content": "now"}, headers=h).json()
+    # The worker sends them in dispatch order: the earlier message, the single, then the bulk.
+    for n, mid in enumerate([done["id"], single["id"], *[m["id"] for m in queued]]):
+        conn.execute(
+            text("UPDATE messages SET status='sent', sent_at=TIMESTAMP('2030-01-01 00:00:00') + INTERVAL :n SECOND WHERE id=:i"),
+            {"n": n, "i": mid},
+        )
+    items = client.get("/messages", params={"order": "asc"}, headers=h).json()["items"]
+    assert [m["id"] for m in items] == [done["id"], single["id"], *[m["id"] for m in queued]]

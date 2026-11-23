@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
@@ -214,9 +214,15 @@ def list_messages(
             Message.content.contains(q, autoescape=True)
             | Message.phone_number.contains(q, autoescape=True)
         )
-    column = Message.created_at.desc() if order == "desc" else Message.created_at.asc()
-    id_column = Message.id.desc() if order == "desc" else Message.id.asc()
-    messages, total = paginate(db, stmt, params, column, id_column)
+    # Send order: bulk messages still waiting go after everything else, because a single message
+    # or reply created later is dispatched ahead of them and so follows the last one sent. A sent
+    # message is placed by when it was sent, so it keeps that place once the bulk behind it is sent.
+    placed_at = func.coalesce(Message.sent_at, Message.created_at)
+    waiting_bulk = case((Message.is_bulk & Message.status.in_(("queued", "sending")), 1), else_=0)
+    pick = (lambda c: c.desc()) if order == "desc" else (lambda c: c.asc())
+    messages, total = paginate(
+        db, stmt, params, pick(waiting_bulk), pick(placed_at), pick(Message.id)
+    )
     return Page(
         items=to_out(db, messages, caller.id), total=total, page=params.page, page_size=params.page_size
     )

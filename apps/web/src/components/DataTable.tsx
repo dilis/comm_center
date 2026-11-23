@@ -44,12 +44,14 @@ type Props<T> = {
   onSortChange?: (key: string, order: "asc" | "desc") => void;
   /** Show the rows through this instead of the table (e.g. chat bubbles); paging and states stay. */
   renderList?: (rows: T[]) => ReactNode;
+  /** Fill the parent's height: the rows scroll while the sort bar and pager stay put. */
+  fill?: boolean;
 };
 
 /** Server-driven table: the parent owns page, size and sort and fetches accordingly. */
 export function DataTable<T>({
   label, columns, rows, total, page, pageSize, sort, isLoading, error, emptyMessage = "Nothing to show.",
-  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange, renderList,
+  getRowId, rowClassName, onPageChange, onPageSizeChange, onSortChange, renderList, fill,
 }: Props<T>) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -81,9 +83,9 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="space-y-3">
+    <div className={cn(fill ? "flex min-h-0 flex-1 flex-col gap-3" : "space-y-3")}>
       {onSortChange && sortable.length > 0 && (
-        <label className="flex items-center gap-2 text-sm md:hidden">
+        <label className="flex shrink-0 items-center gap-2 text-sm md:hidden">
           Sort by
           <Select
             className="h-8 flex-1"
@@ -100,6 +102,7 @@ export function DataTable<T>({
           </Select>
         </label>
       )}
+      <div className={cn(fill && "min-h-0 flex-1 overflow-y-auto")}>
       {renderList ? (
         error ? (
           <p role="alert" className="py-8 text-center text-destructive">{error}</p>
@@ -164,7 +167,8 @@ export function DataTable<T>({
         </TableBody>
       </Table>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{total === 0 ? "No results" : `Showing ${first}–${last} of ${total}`}</span>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">
