@@ -165,7 +165,7 @@ describe("list", () => {
     expect(items[0]).toHaveTextContent("the oldest one");
   });
 
-  test("one approach to the top loads one slice, not every slice", async () => {
+  test("a fast flick that keeps coasting loads one slice; the next waits until the scrolling stops", async () => {
     const slice = (n: number) => Array.from({ length: 30 }, (_, i) => ({ ...out, id: n * 100 + i, content: `slice ${n} row ${i}` }));
     requests = [];
     server.use(
@@ -179,11 +179,16 @@ describe("list", () => {
     await open();
     await screen.findByText("slice 1 row 0");
     const feed = screen.getByRole("list", { name: "Messages" }).parentElement!;
-    fireEvent.wheel(feed, { deltaY: -100 });
-    await screen.findByText("slice 2 row 0");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const pages = new Set(requests.map((u) => u.searchParams.get("page")));
-    expect([...pages].sort()).toEqual(["1", "2"]);
+    const pagesAsked = () => new Set(requests.map((u) => u.searchParams.get("page")));
+    // The finger keeps moving: wheel events every 40 ms for a while, well past slice 2 arriving.
+    for (let i = 0; i < 10; i++) {
+      fireEvent.wheel(feed, { deltaY: -100 });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    expect(await screen.findByText("slice 2 row 0")).toBeInTheDocument();
+    expect([...pagesAsked()].sort()).toEqual(["1", "2"]);
+    // Once the scrolling stops at the top, the next slice follows.
+    expect(await screen.findByText("slice 3 row 0")).toBeInTheDocument();
   });
 
   test("All and Received show unread out of total, Sent shows just its total", async () => {

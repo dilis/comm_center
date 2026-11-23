@@ -60,6 +60,8 @@ type Props<T> = {
 };
 
 const EDGE_PX = 120;
+/** How long the scrolling must stay still before the feed loads another slice. */
+const SETTLE_MS = 150;
 
 /** Server-driven table: the parent owns page, size and sort and fetches accordingly. */
 export function DataTable<T>({
@@ -106,8 +108,28 @@ export function DataTable<T>({
   });
   const loadMore = feed?.onLoadMore;
   const canLoad = !!feed && feed.hasMore && !feed.isLoadingMore && !error;
-  // Only the reader scrolling up toward the top asks for older rows, never our own repositioning,
-  // so one approach to the top loads one page.
+  // A quick flick keeps coasting after a slice arrives and would reach the top of the next one
+  // and load that too, and so on through every slice. So after a request the feed waits until the
+  // scrolling has been quiet for a moment; if the reader then rests near the top, it asks again.
+  const busy = useRef(false);
+  const quiet = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const latest = useRef({ canLoad, loadMore });
+  latest.current = { canLoad, loadMore };
+  function settle() {
+    clearTimeout(quiet.current);
+    quiet.current = setTimeout(() => {
+      busy.current = false;
+      const el = scroller.current;
+      if (latest.current.canLoad && el && el.scrollTop < EDGE_PX) request();
+    }, SETTLE_MS);
+  }
+  function request() {
+    busy.current = true;
+    latest.current.loadMore?.();
+    settle();
+  }
+  useEffect(() => () => clearTimeout(quiet.current), []);
+  // Only the reader scrolling up toward the top asks for older rows, never our own repositioning.
   function onScroll() {
     const el = scroller.current;
     if (!el) return;
@@ -115,12 +137,14 @@ export function DataTable<T>({
     lastTop.current = el.scrollTop;
     seen.current.atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < EDGE_PX;
     seen.current.height = el.scrollHeight;
-    if (canLoad && movingUp && el.scrollTop < EDGE_PX) loadMore?.();
+    if (busy.current) settle();
+    else if (canLoad && movingUp && el.scrollTop < EDGE_PX) request();
   }
   // Already at the top, so no scroll event can follow: a wheel up there asks too.
   function onWheel(e: WheelEvent) {
     const el = scroller.current;
-    if (canLoad && el && e.deltaY < 0 && el.scrollTop < EDGE_PX) loadMore?.();
+    if (busy.current) settle();
+    else if (canLoad && el && e.deltaY < 0 && el.scrollTop < EDGE_PX) request();
   }
   // A first page too short to scroll would never trigger onScroll, so keep loading until it fills.
   useEffect(() => {
