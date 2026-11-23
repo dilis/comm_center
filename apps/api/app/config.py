@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # anywhere else; changing it means re-entering the key in every phone.
     webhook_secret: str = DEV_WEBHOOK_SECRET
     access_token_ttl_seconds: int = 15 * 60
-    refresh_token_ttl_seconds: int = 7 * 24 * 60 * 60
+    refresh_token_ttl_seconds: int = 10 * 365 * 24 * 60 * 60  # until sign-out or revocation; rotation renews it
     # Workers sign in again when this runs out (they have no refresh token).
     worker_token_ttl_seconds: int = 30 * 24 * 3600  # signs in once per start; every request still checks the agent is active
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR or CRITICAL (API and worker)
