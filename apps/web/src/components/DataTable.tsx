@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type WheelEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -81,28 +81,46 @@ export function DataTable<T>({
   // it, and follow new rows only while the reader is already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
   const seen = useRef<{ key: string; first: string | number | undefined; height: number; atBottom: boolean }>({ key: "", first: undefined, height: 0, atBottom: true });
-  const firstId = rows && rows.length > 0 ? getRowId(rows[0]) : undefined;
+  const lastTop = useRef(0);
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!feed || !el || !rows || rows.length === 0) return;
     const before = seen.current;
+    // Older rows were added above when the row that used to be first is still there, further down.
+    const prepended = before.first !== undefined && rows.findIndex((r) => getRowId(r) === before.first) > 0;
+    let atBottom = before.atBottom;
     if (before.key !== feed.resetKey) {
       el.scrollTop = el.scrollHeight;
-    } else if (before.first !== undefined && firstId !== before.first) {
-      el.scrollTop += el.scrollHeight - before.height; // older rows arrived above
+      atBottom = true;
+    } else if (prepended) {
+      el.scrollTop += el.scrollHeight - before.height;
+    } else if (before.first !== undefined && getRowId(rows[0]) !== before.first) {
+      // A different list took the place of the old one (a filter changed): start at the newest.
+      el.scrollTop = el.scrollHeight;
+      atBottom = true;
     } else if (before.atBottom) {
       el.scrollTop = el.scrollHeight;
     }
-    seen.current = { key: feed.resetKey, first: firstId, height: el.scrollHeight, atBottom: before.key !== feed.resetKey || before.atBottom };
+    lastTop.current = el.scrollTop; // our own move is not the reader scrolling up
+    seen.current = { key: feed.resetKey, first: getRowId(rows[0]), height: el.scrollHeight, atBottom };
   });
   const loadMore = feed?.onLoadMore;
   const canLoad = !!feed && feed.hasMore && !feed.isLoadingMore && !error;
+  // Only the reader scrolling up toward the top asks for older rows, never our own repositioning,
+  // so one approach to the top loads one page.
   function onScroll() {
     const el = scroller.current;
     if (!el) return;
+    const movingUp = el.scrollTop < lastTop.current;
+    lastTop.current = el.scrollTop;
     seen.current.atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < EDGE_PX;
     seen.current.height = el.scrollHeight;
-    if (canLoad && el.scrollTop < EDGE_PX) loadMore?.();
+    if (canLoad && movingUp && el.scrollTop < EDGE_PX) loadMore?.();
+  }
+  // Already at the top, so no scroll event can follow: a wheel up there asks too.
+  function onWheel(e: WheelEvent) {
+    const el = scroller.current;
+    if (canLoad && el && e.deltaY < 0 && el.scrollTop < EDGE_PX) loadMore?.();
   }
   // A first page too short to scroll would never trigger onScroll, so keep loading until it fills.
   useEffect(() => {
@@ -148,8 +166,7 @@ export function DataTable<T>({
           </Select>
         </label>
       )}
-      <div ref={scroller} onScroll={feed ? onScroll : undefined} className={cn(fill && "min-h-0 flex-1 overflow-y-auto")}>
-      {feed?.isLoadingMore && <p className="py-2 text-center text-xs text-muted-foreground">Loading older messages…</p>}
+      <div ref={scroller} onScroll={feed ? onScroll : undefined} onWheel={feed ? onWheel : undefined} className={cn(fill && "min-h-0 flex-1 overflow-y-auto")}>
       {renderList ? (
         error ? (
           <p role="alert" className="py-8 text-center text-destructive">{error}</p>
@@ -216,7 +233,10 @@ export function DataTable<T>({
       )}
       </div>
       {feed ? (
-        <div className="shrink-0 text-sm text-muted-foreground">{total === 0 ? "No results" : `Showing ${rows?.length ?? 0} of ${total}`}</div>
+        <div className="shrink-0 text-sm text-muted-foreground">
+          {total === 0 ? "No results" : `Showing ${rows?.length ?? 0} of ${total}`}
+          {feed.isLoadingMore && " · Loading older messages…"}
+        </div>
       ) : (
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{total === 0 ? "No results" : `Showing ${first}–${last} of ${total}`}</span>

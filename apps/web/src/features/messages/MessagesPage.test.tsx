@@ -157,12 +157,33 @@ describe("list", () => {
     await screen.findByText("new 0");
     expect(screen.queryByText("the oldest one")).not.toBeInTheDocument();
     const feed = screen.getByRole("list", { name: "Messages" }).parentElement!;
-    fireEvent.scroll(feed, { target: { scrollTop: 0 } });
+    fireEvent.wheel(feed, { deltaY: -100 });
     expect(await screen.findByText("the oldest one")).toBeInTheDocument();
     expect(requests.map((u) => u.searchParams.get("page"))).toContain("2");
     // and it sits above the newer ones
     const items = screen.getAllByRole("listitem");
     expect(items[0]).toHaveTextContent("the oldest one");
+  });
+
+  test("one approach to the top loads one slice, not every slice", async () => {
+    const slice = (n: number) => Array.from({ length: 30 }, (_, i) => ({ ...out, id: n * 100 + i, content: `slice ${n} row ${i}` }));
+    requests = [];
+    server.use(
+      http.get("*/api/messages/counts", () => HttpResponse.json({ all: 90, sent: 90, received: 0, unread: 0 })),
+      http.get("*/api/messages", ({ request }) => {
+        const url = new URL(request.url);
+        requests.push(url);
+        return HttpResponse.json({ ...page(slice(Number(url.searchParams.get("page")))), total: 90 });
+      }),
+    );
+    await open();
+    await screen.findByText("slice 1 row 0");
+    const feed = screen.getByRole("list", { name: "Messages" }).parentElement!;
+    fireEvent.wheel(feed, { deltaY: -100 });
+    await screen.findByText("slice 2 row 0");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const pages = new Set(requests.map((u) => u.searchParams.get("page")));
+    expect([...pages].sort()).toEqual(["1", "2"]);
   });
 
   test("All and Received show unread out of total, Sent shows just its total", async () => {
