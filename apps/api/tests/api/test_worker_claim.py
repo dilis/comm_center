@@ -232,3 +232,20 @@ def test_a_claimed_message_carries_its_attempt_number(client, conn, setup, ana):
     retried = make_message(conn, ana, send_attempt=3)
     got = [claim(client, headers, device).json()["message"] for _ in range(2)]
     assert [(m["id"], m["attempt"]) for m in got] == [(first, 0), (retried, 3)]
+
+
+def test_a_single_message_is_claimed_before_older_bulk_messages(client, conn, setup, ana):
+    headers, device = setup
+    bulk = make_message(conn, ana, content="bulk", is_bulk=1)
+    single = make_message(conn, ana, content="single")
+    assert claim(client, headers, device).json()["message"]["id"] == single
+    assert claim(client, headers, device).json()["message"]["id"] == bulk
+
+
+def test_single_messages_keep_the_order_they_were_posted(client, conn, setup, ana):
+    headers, device = setup
+    make_message(conn, ana, content="bulk", is_bulk=1)
+    first = make_message(conn, ana, content="s1")
+    second = make_message(conn, ana, content="s2")
+    got = [claim(client, headers, device).json()["message"]["id"] for _ in range(2)]
+    assert got == [first, second]

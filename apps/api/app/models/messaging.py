@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -57,6 +58,9 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(f"phone_number {E164}", name="e164"),
         Index("ix_messages_owner_id_deleted_at", "owner_id", "deleted_at"),
         Index("ix_messages_status_created_at", "status", "created_at"),
+        # Serves the claim's ORDER BY, so ``LIMIT 1 ... SKIP LOCKED`` stops at the first row it can
+        # take. Without it MySQL sorts, and the sort locks every queued row.
+        Index("ix_messages_queue", "status", "is_bulk", "created_at", "id"),
         Index("ix_messages_contact_id", "contact_id"),
         Index("ix_messages_reply_to_id", "reply_to_id"),
     )
@@ -79,6 +83,9 @@ class Message(Base, OwnedMixin, TimestampMixin, SoftDeleteMixin):
     # id given to the phone (``cc-<id>``, then ``cc-<id>-1``, ...), so a retry is not taken for the
     # message the phone already has.
     send_attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    # Outbound only, set once: true for a message made by a bulk send. The claim takes non-bulk
+    # first, then the oldest, so a single send or reply goes next after the one being sent.
+    is_bulk: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     error_message: Mapped[str | None] = mapped_column(Text)

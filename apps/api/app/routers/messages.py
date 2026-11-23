@@ -322,7 +322,7 @@ def send_bulk(
         messages.append(
             Message(
                 channel="gsm", contact_id=contact_id, phone_number=chosen.phone_e164,
-                content=text, status="queued", owner_id=caller.id,
+                content=text, status="queued", owner_id=caller.id, is_bulk=True,
             )
         )  # fmt: skip
     db.add_all(messages)

@@ -189,3 +189,16 @@ def test_a_recipient_whose_name_makes_the_text_too_long_is_skipped_not_the_other
     assert body["skipped"] == [
         {"contact_id": long_name, "reason": "message too long once the name is inserted"}
     ]
+
+
+def _bulk_flags(conn):
+    return [r[0] for r in conn.execute(text("SELECT is_bulk FROM messages ORDER BY id"))]
+
+
+def test_bulk_messages_are_flagged_bulk_and_a_single_send_is_not(client, h, conn):
+    ana = person(conn, "Ana", "+639171111111")
+    ben = person(conn, "Ben", "+639173333333")
+    assert bulk(client, h, [ana, ben]).status_code == 201
+    r = client.post("/messages/send", json={"contact_id": ana, "content": "hi"}, headers=h)
+    assert r.status_code == 201, r.text
+    assert _bulk_flags(conn) == [1, 1, 0]

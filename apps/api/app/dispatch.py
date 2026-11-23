@@ -59,8 +59,8 @@ def fail_device_leases(db: Session, device_id: int) -> int:
 
 
 def claim_next(db: Session, device: GsmDevice) -> Message | None:
-    """Take the oldest queued message that no other claimer holds (``FOR UPDATE SKIP LOCKED``) and
-    that this device may send (one meant for another device is skipped), mark it ``sending`` on this
+    """Take the next queued message (a single or reply before a bulk one, then oldest) that no other
+    claimer holds (``FOR UPDATE SKIP LOCKED``) and that this device may send (one meant for another device is skipped), mark it ``sending`` on this
     device and lease it. The caller commits."""
     message = db.scalars(
         select(Message)
@@ -69,7 +69,7 @@ def claim_next(db: Session, device: GsmDevice) -> Message | None:
             Message.channel == "gsm",
             or_(Message.gsm_device_id.is_(None), Message.gsm_device_id == device.id),
         )
-        .order_by(Message.created_at, Message.id)
+        .order_by(Message.is_bulk, Message.created_at, Message.id)
         .limit(1)
         .with_for_update(skip_locked=True)
     ).first()
