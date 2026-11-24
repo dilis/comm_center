@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Share2, Smartphone, Trash2, User } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Share2, Smartphone, SlidersHorizontal, Trash2, User } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
@@ -62,6 +62,10 @@ export default function MessagesPage() {
   const queryClient = useQueryClient();
   const list = useListParams({ sort: "created_at", order: "desc", filters: ["q", "status", "direction"] });
   const [dialog, setDialog] = useState<Dialog>(null);
+  // On a phone the search and status filter fold away behind one button, and a bubble's actions
+  // show only for the message you tapped; on a wider screen both are always visible.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tapped, setTapped] = useState<number | null>(null);
   // Only received messages can be answered, by someone who may create messages.
   const canReply = (m: Message) => m.direction === "inbound" && can("messages:create");
   // Only a sent message that failed, or that the phone has not confirmed yet, can be put back in the queue.
@@ -259,13 +263,13 @@ export default function MessagesPage() {
 
   // The All tab reads like a chat: received on the left, sent on the right.
   const bubbles = (rows: Message[]) => (
-    <div className="space-y-3">
+    <div className="space-y-2 md:space-y-3 max-md:pb-16">
       {rows.map((m) => {
         const mine = m.direction === "outbound";
         // Sent bubbles are filled, so their secondary text is a tint of white, not the page's grey.
         const soft = mine ? "text-sky-100" : "text-muted-foreground";
         return (
-          <div key={m.id} role="listitem" className={cn("flex flex-col gap-1", mine ? "items-end justify-end" : "items-start justify-start", mine && pending(m) && "opacity-60")}>
+          <div key={m.id} role="listitem" className={cn("flex flex-col gap-0.5 md:gap-1", mine ? "items-end justify-end" : "items-start justify-start", mine && pending(m) && "opacity-60")}>
             {/* The sender sits above the bubble: the contact for a received message, our own user for a sent one (whose recipient is shown inside). */}
             <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-xs text-muted-foreground">
               {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
@@ -279,8 +283,9 @@ export default function MessagesPage() {
               )}
             </div>
             <div
+              onClick={() => setTapped((t) => (t === m.id ? null : m.id))}
               className={cn(
-                "flex max-w-[85%] flex-col gap-1 rounded-2xl px-4 py-2.5 shadow-sm md:max-w-[65%]",
+                "flex max-w-[92%] flex-col gap-0.5 rounded-2xl px-3 py-2 shadow-sm md:max-w-[65%] md:gap-1 md:px-4 md:py-2.5",
                 mine ? "rounded-br-sm bg-sky-600 text-white dark:bg-sky-700" : "rounded-bl-sm bg-muted text-foreground",
               )}
             >
@@ -297,7 +302,7 @@ export default function MessagesPage() {
                 {mine && <Badge variant={STATUS_VARIANT[m.status]}>{m.status}</Badge>}
               </div>
               {m.error_message && <div className={cn("break-words text-xs", mine ? "font-medium text-red-100" : "text-destructive")}>{m.error_message}</div>}
-              <div className={cn("-mx-2", mine && "[&_button]:text-white [&_button:hover]:bg-white/20")}>{cellOf("actions", m)}</div>
+              <div className={cn("-mx-2", tapped !== m.id && "max-md:hidden", mine && "[&_button]:text-white [&_button:hover]:bg-white/20")}>{cellOf("actions", m)}</div>
             </div>
           </div>
         );
@@ -309,17 +314,21 @@ export default function MessagesPage() {
     <div className="fill flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Messages"
+        compactOnMobile
         actions={
           can("messages:create") && (
-            <Button onClick={() => setDialog({ kind: "new" })}>
-              <Plus className="h-4 w-4" aria-hidden />
-              New message
+            <Button
+              className="max-md:fixed max-md:bottom-5 max-md:right-5 max-md:z-20 max-md:h-12 max-md:w-12 max-md:rounded-full max-md:p-0 max-md:shadow-lg"
+              onClick={() => setDialog({ kind: "new" })}
+            >
+              <Plus className="h-4 w-4 max-md:h-5 max-md:w-5" aria-hidden />
+              <span className="max-md:sr-only">New message</span>
             </Button>
           )
         }
       />
       <DeviceAlert />
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3 max-md:mb-2 max-md:gap-2">
         <Tabs
           label="Direction"
           value={direction}
@@ -330,6 +339,20 @@ export default function MessagesPage() {
             { value: "received", label: "Received", icon: <ReceivedArrow />, count: unreadOf(counts.data?.received), attention: hasUnread },
           ]}
         />
+        <Button
+          variant="outline"
+          size="icon"
+          className="relative md:hidden"
+          aria-label="Filters"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((o) => !o)}
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden />
+          {!filtersOpen && (q || (direction !== "received" && status)) && (
+            <span role="img" aria-label="Filters active" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-sky-600" />
+          )}
+        </Button>
+        <div className={cn("flex flex-wrap items-center gap-3 max-md:w-full max-md:gap-2", !filtersOpen && "max-md:hidden")}>
         <SearchBox label="Search messages" placeholder="Search text or number" value={q} onChange={(v) => list.setFilter("q", v)} />
         {direction !== "received" && <label className="flex items-center gap-2 text-sm">
           Status
@@ -342,6 +365,7 @@ export default function MessagesPage() {
             ))}
           </Select>
         </label>}
+        </div>
       </div>
       <DataTable
         fill

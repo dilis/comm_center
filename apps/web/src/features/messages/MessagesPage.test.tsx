@@ -70,6 +70,23 @@ describe("list", () => {
     expect(failedBubble).toHaveTextContent("no signal");
   });
 
+  test("on a phone the filters fold behind one button and a bubble's actions show when it is tapped", async () => {
+    backend();
+    await open();
+    const search = await screen.findByRole("searchbox", { name: "Search messages" });
+    const folded = () => search.parentElement!.classList.contains("max-md:hidden");
+    expect(folded()).toBe(true);
+    const toggle = screen.getByRole("button", { name: "Filters" });
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(folded()).toBe(false);
+    const view = screen.getByRole("button", { name: "View message 1" });
+    const actions = () => view.closest(".-mx-2")!.classList.contains("max-md:hidden");
+    expect(actions()).toBe(true);
+    await userEvent.click(screen.getByText("hello Ana"));
+    expect(actions()).toBe(false);
+  });
+
   test("the owner icons are not shown on the Sent tab", async () => {
     backend();
     await open("admin", "/messages?direction=sent");
