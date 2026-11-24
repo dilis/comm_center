@@ -323,30 +323,43 @@ describe("list", () => {
     expect(screen.getAllByRole("img", { name: "Unread" })).toHaveLength(1);
   });
 
-  test("opening an unread message marks it read for you, and the list follows", async () => {
+  test("a new message is marked read as soon as it is shown, and still looks new for a while", async () => {
     let unread = true;
     let marked = 0;
+    const original = POLL.freshMs;
+    POLL.freshMs = 4000;
     server.use(
       http.get("*/api/messages", () => HttpResponse.json(page([{ ...incoming, unread }]))),
       http.post("*/api/messages/2/read", () => ((marked += 1), (unread = false), new HttpResponse(null, { status: 204 }))),
     );
-    await open();
-    expect(await screen.findByText("hi from Ana")).toHaveClass("font-semibold");
-    await userEvent.click(screen.getByRole("button", { name: "View message 2" }));
-    await waitFor(() => expect(marked).toBe(1));
-    await waitFor(() => expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument());
-    expect(within(screen.getByRole("list", { name: "Messages", hidden: true })).getByText("hi from Ana")).not.toHaveClass("font-semibold");
-  });
+    try {
+      await open();
+      expect(await screen.findByText("hi from Ana")).toHaveClass("font-semibold");
+      await waitFor(() => expect(marked).toBe(1));
+      // The server now calls it read, yet this screen keeps the marker for a few minutes ...
+      await new Promise((resolve) => setTimeout(resolve, 3300)); // a refresh later
+      expect(unread).toBe(false);
+      expect(screen.getByText("hi from Ana")).toHaveClass("font-semibold");
+      expect(screen.getByRole("img", { name: "Unread" })).toBeInTheDocument();
+      // ... and then drops it.
+      await waitFor(() => expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument(), { timeout: 3000 });
+      expect(screen.getByText("hi from Ana")).not.toHaveClass("font-semibold");
+      expect(marked).toBe(1);
+    } finally {
+      POLL.freshMs = original;
+    }
+  }, 15000);
 
-  test("opening a message that is already read does not ask the server again", async () => {
+  test("opening a message does not ask the server a second time", async () => {
     let marked = 0;
-    backend([out, { ...incoming, unread: false }]);
+    backend([out, incoming]);
     server.use(http.post("*/api/messages/*/read", () => ((marked += 1), new HttpResponse(null, { status: 204 }))));
     await open();
+    await waitFor(() => expect(marked).toBe(1));
     await userEvent.click(await screen.findByRole("button", { name: "View message 2" }));
     await screen.findByRole("dialog", { name: "Message" });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(marked).toBe(0);
+    expect(marked).toBe(1);
   });
 
   test("message content is untrusted: shown as text, with line breaks kept", async () => {

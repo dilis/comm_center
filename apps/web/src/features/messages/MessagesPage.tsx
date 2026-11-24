@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, CornerUpLeft, Eye, Plus, RotateCw, Share2, Smartphone, SlidersHorizontal, Trash2, User } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -130,15 +130,41 @@ export default function MessagesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages"] }),
   });
 
-  // Opening a received message marks it read for this user only (the server keeps it per person).
+  // A received message is marked read for this user (the server keeps it per person, so other
+  // devices stop showing it as new) as soon as it is on screen. This screen keeps showing the
+  // "new" marker for POLL.freshMs more, so it can still be noticed.
   const markRead = useMutation({
     mutationFn: (message: Message) => unwrap(api.POST("/messages/{message_id}/read", { params: { path: { message_id: message.id } } })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages"] }),
   });
-  const view = (message: Message) => {
-    setDialog({ kind: "view", message });
-    if (message.unread) markRead.mutate(message);
+  const handled = useRef(new Set<number>());
+  const [fresh, setFresh] = useState<Map<number, number>>(new Map()); // id -> when its marker expires
+  const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
+  useEffect(() => {
+    const onChange = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+  const markShown = (message: Message) => {
+    if (handled.current.has(message.id)) return;
+    handled.current.add(message.id);
+    setFresh((prev) => new Map(prev).set(message.id, Date.now() + POLL.freshMs));
+    markRead.mutate(message, { onError: () => handled.current.delete(message.id) }); // tried again on the next refresh
   };
+  useEffect(() => {
+    if (!visible || !rows) return;
+    rows.filter((m) => m.unread).forEach(markShown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, visible]);
+  // Drop each marker once its time is up.
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const next = Math.min(...fresh.values());
+    const timer = setTimeout(() => setFresh((prev) => new Map([...prev].filter(([, until]) => until > Date.now()))), Math.max(next - Date.now(), 0) + 10);
+    return () => clearTimeout(timer);
+  }, [fresh]);
+  const isNew = (m: Message) => m.unread || (fresh.get(m.id) ?? 0) > Date.now();
+  const view = (message: Message) => setDialog({ kind: "view", message });
 
   const columns: Column<Message>[] = [
     {
@@ -152,7 +178,7 @@ export default function MessagesPage() {
         <div>
           <div className="flex items-center gap-1.5 font-medium">
             {direction === "all" && <DirectionArrow message={m} />}
-            {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 rounded-full bg-sky-600" />}
+            {isNew(m) && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 rounded-full bg-sky-600" />}
             {m.contact_name}
           </div>
           <div className="text-xs text-muted-foreground">{m.phone_number}</div>
@@ -185,7 +211,7 @@ export default function MessagesPage() {
       id: "content",
       header: "Message",
       className: "max-md:order-last", // last in the stacked phone card
-      cell: (m) => <p className={cn("line-clamp-2 max-w-md whitespace-pre-wrap break-words", m.unread && "font-semibold")}>{m.content}</p>,
+      cell: (m) => <p className={cn("line-clamp-2 max-w-md whitespace-pre-wrap break-words", isNew(m) && "font-semibold")}>{m.content}</p>,
     },
     ...(direction === "received" ? [] : [{
       id: "status",
@@ -272,7 +298,7 @@ export default function MessagesPage() {
           <div key={m.id} role="listitem" className={cn("flex flex-col gap-0.5 md:gap-1", mine ? "items-end justify-end" : "items-start justify-start", mine && pending(m) && "opacity-60")}>
             {/* The sender sits above the bubble: the contact for a received message, our own user for a sent one (whose recipient is shown inside). */}
             <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-xs text-muted-foreground">
-              {m.unread && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
+              {isNew(m) && <span role="img" aria-label="Unread" className="h-2 w-2 shrink-0 self-center rounded-full bg-sky-600" />}
               {mine ? (
                 <span className="font-medium text-foreground">{m.owner_name}</span>
               ) : (
@@ -296,7 +322,7 @@ export default function MessagesPage() {
                 </div>
               )}
               {m.reply_to_id != null && <div className={cn("text-xs", soft)}>Reply to #{m.reply_to_id}</div>}
-              <p className={cn("whitespace-pre-wrap break-words", m.unread && "font-semibold")}>{m.content}</p>
+              <p className={cn("whitespace-pre-wrap break-words", isNew(m) && "font-semibold")}>{m.content}</p>
               <div className={cn("flex flex-wrap items-center gap-2 text-xs", soft)}>
                 {cellOf("date", m)}
                 {mine && <Badge variant={STATUS_VARIANT[m.status]}>{m.status}</Badge>}

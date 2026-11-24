@@ -65,6 +65,7 @@ export function signIn(role: Role | string[] = "admin", overrides: Record<string
 /** Empty list endpoints so a page can mount without every test stubbing all of them. */
 export function emptyBackend() {
   server.use(
+    http.post("*/api/messages/:id/read", () => new HttpResponse(null, { status: 204 })),
     http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0, unread: 0 })),
     http.get("*/api/messages", () => HttpResponse.json(page([]))),
     http.get("*/api/contacts", () => HttpResponse.json(page([]))),
