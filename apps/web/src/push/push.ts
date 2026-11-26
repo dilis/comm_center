@@ -76,3 +76,13 @@ export async function dropForSignOut(): Promise<void> {
     // signing out must never wait on, or fail because of, push
   }
 }
+
+/** The session was ended from outside (signed out elsewhere, or refused): only the browser's side
+ * is left to undo, since there is no access token and the server has dropped its own side. */
+export async function forgetSubscription(): Promise<void> {
+  try {
+    await (await browserSubscription())?.unsubscribe();
+  } catch {
+    // nothing to do: the next sign-in shows the switch as the browser has it
+  }
+}

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import sessions
 from app.authz import AuthUser, require
 from app.db import get_db
+from app.deps import get_session_id
 from app.models import ActivityLog, Contact, LoginLog, RefreshToken, User
 from app.pagination import Page, PageParams, paginate
 
@@ -120,6 +121,7 @@ class SignedInOut(sessions.SessionOut):
     user_id: int
     username: str
     name: str
+    current: bool  # the session making this request
 
 
 @router.get("/sessions", response_model=Page[SignedInOut])
@@ -127,6 +129,7 @@ def list_sessions(
     q: str | None = None,
     params: PageParams = Depends(),
     _: AuthUser = Depends(require("logs", "read_all")),
+    session_id: str | None = Depends(get_session_id),
     db: Session = Depends(get_db),
 ) -> Page[SignedInOut]:
     """Who is signed in now: one item per session, most recently active first. ``q`` matches the
@@ -147,6 +150,7 @@ def list_sessions(
         SignedInOut(
             **sessions.session_fields(t), user_id=t.user_id,
             username=people[t.user_id][0], name=people[t.user_id][1],
+            current=t.session_id == session_id,
         )
         for t in tokens
     ]  # fmt: skip

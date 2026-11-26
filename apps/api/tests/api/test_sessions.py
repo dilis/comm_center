@@ -6,8 +6,10 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select
 
+from app import push
 from app.clock import utcnow
-from app.models import RefreshToken, User
+from app.config import settings
+from app.models import ActivityLog, LoginLog, PushSubscription, RefreshToken, User
 from tests.api.conftest import PASSWORD, login
 from tests.db.helpers import make_login_user
 
@@ -146,3 +148,148 @@ def test_only_log_readers_see_everyones_sessions(client, conn):
     make_login_user(conn, "op", "operator")
     tokens = login(client, "op")
     assert client.get("/logs/sessions", headers=bearer(tokens)).status_code == 403
+
+
+# --- signing a session out ------------------------------------------------------------------
+
+
+def try_refresh(client, tokens):
+    return client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+
+def id_of(client, tokens):
+    return next(s["id"] for s in mine(client, tokens)["items"] if s["current"])
+
+
+def end_mine(client, tokens, session_id):
+    return client.delete(f"/auth/me/sessions/{session_id}", headers=bearer(tokens))
+
+
+def end_theirs(client, tokens, user_id, session_id):
+    return client.delete(f"/users/{user_id}/sessions/{session_id}", headers=bearer(tokens))
+
+
+def test_signing_out_one_of_your_sessions_leaves_the_others(client, db, boss):
+    phone = sign_in(client, "boss", PHONE)
+    laptop = sign_in(client, "boss")
+    target = id_of(client, phone)
+    assert end_mine(client, laptop, target).status_code == 204
+    assert [s["current"] for s in mine(client, laptop)["items"]] == [True]
+    # the signed-out device trying again is refused, and costs nobody else their session
+    assert try_refresh(client, phone).status_code == 401
+    assert try_refresh(client, laptop).status_code == 200
+    assert "sessions_revoked" not in db.scalars(select(LoginLog.event)).all()
+
+
+def test_a_session_can_be_signed_out_after_it_has_refreshed(client, boss):
+    phone = refresh(client, sign_in(client, "boss", PHONE), PHONE)
+    laptop = sign_in(client, "boss")
+    assert end_mine(client, laptop, id_of(client, phone)).status_code == 204
+    assert try_refresh(client, phone).status_code == 401
+    assert try_refresh(client, laptop).status_code == 200
+
+
+def test_an_old_device_cannot_end_the_sessions_made_after_a_password_change(client, db, boss):
+    old = sign_in(client, "boss", PHONE)
+    laptop = sign_in(client, "boss")
+    client.put(
+        "/auth/me/password",
+        headers=bearer(laptop),
+        json={"current_password": PASSWORD, "new_password": PASSWORD + " again"},
+    )
+    new = client.post(
+        "/auth/login", json={"username": "boss", "password": PASSWORD + " again"}
+    ).json()
+    assert try_refresh(client, old).status_code == 401
+    assert try_refresh(client, new).status_code == 200
+    assert "sessions_revoked" not in db.scalars(select(LoginLog.event)).all()
+
+
+def test_a_spent_token_of_a_live_session_still_ends_every_session(client, db, boss):
+    stolen = sign_in(client, "boss", PHONE)
+    laptop = sign_in(client, "boss")
+    refresh(client, stolen)
+    assert try_refresh(client, stolen).status_code == 401
+    assert try_refresh(client, laptop).status_code == 401
+    assert "sessions_revoked" in db.scalars(select(LoginLog.event)).all()
+
+
+def test_only_your_own_live_sessions_can_be_ended_through_your_profile(client, conn, boss):
+    make_login_user(conn, "op", "operator")
+    other = sign_in(client, "op")
+    tokens = sign_in(client, "boss")
+    theirs = id_of(client, other)
+    assert end_mine(client, tokens, theirs).status_code == 404
+    assert end_mine(client, tokens, "nothing").status_code == 404
+    assert try_refresh(client, other).status_code == 200
+
+
+def test_an_admin_can_sign_out_another_persons_session(client, db, conn, boss):
+    op = make_login_user(conn, "op", "operator")
+    first = sign_in(client, "op", PHONE)
+    second = sign_in(client, "op")
+    admin = sign_in(client, "boss")
+    target = id_of(client, first)
+    assert end_theirs(client, admin, op, target).status_code == 204
+    assert try_refresh(client, first).status_code == 401
+    assert try_refresh(client, second).status_code == 200
+    assert end_theirs(client, admin, op, target).status_code == 404  # already ended
+    entry = db.scalars(select(ActivityLog)).one()
+    assert (entry.user_id, entry.action, entry.resource, entry.resource_id) == (
+        boss, "sign_out", "session", op,
+    )
+    assert "op" in entry.summary
+
+
+def test_a_session_is_only_ended_under_the_user_it_belongs_to(client, conn, boss):
+    op = make_login_user(conn, "op", "operator")
+    admin = sign_in(client, "boss")
+    assert end_theirs(client, admin, op, id_of(client, admin)).status_code == 404
+    assert try_refresh(client, admin).status_code == 200
+
+
+def test_ending_your_own_session_is_logged(client, db, boss):
+    phone = sign_in(client, "boss", PHONE)
+    laptop = sign_in(client, "boss")
+    end_mine(client, laptop, id_of(client, phone))
+    entry = db.scalars(select(ActivityLog)).one()
+    assert (entry.user_id, entry.action, entry.resource) == (boss, "sign_out", "session")
+
+
+@pytest.mark.parametrize("role", ["operator", "agent", "auditor"])
+def test_reading_logs_is_not_enough_to_sign_people_out(client, conn, boss, role):
+    make_login_user(conn, "caller", role)
+    victim = sign_in(client, "boss")
+    caller = sign_in(client, "caller")
+    assert end_theirs(client, caller, boss, id_of(client, victim)).status_code == 403
+    assert try_refresh(client, victim).status_code == 200
+
+
+def test_the_log_marks_the_callers_own_session(client, conn, boss):
+    make_login_user(conn, "op", "operator")
+    sign_in(client, "op")
+    admin = sign_in(client, "boss")
+    assert {(s["username"], s["current"]) for s in everyone(client, admin)["items"]} == {
+        ("op", False), ("boss", True),
+    }
+
+
+@pytest.mark.parametrize("by", ["owner", "admin"])
+def test_signing_out_a_session_stops_its_notifications(client, db, conn, monkeypatch, by):
+    public, _ = push.new_vapid_keys()
+    monkeypatch.setattr(settings, "vapid_public_key", public)
+    op = make_login_user(conn, "op", "operator")
+    make_login_user(conn, "boss", "admin")
+    phone = sign_in(client, "op", PHONE)
+    laptop = sign_in(client, "op")
+    for n, tokens in enumerate((phone, laptop)):
+        body = {"endpoint": f"https://push.example.com/{n}", "keys": {"p256dh": "k", "auth": "a"}}
+        # subscribed before a refresh: still the same session afterwards
+        assert client.put("/auth/me/push", json=body, headers=bearer(tokens)).status_code == 204
+    phone = refresh(client, phone, PHONE)
+    target = id_of(client, phone)
+    if by == "owner":
+        assert end_mine(client, laptop, target).status_code == 204
+    else:
+        assert end_theirs(client, sign_in(client, "boss"), op, target).status_code == 204
+    assert db.scalars(select(PushSubscription.endpoint)).all() == ["https://push.example.com/1"]

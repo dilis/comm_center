@@ -170,7 +170,12 @@ def _rotate(db: Session, refresh_token: str, request: Request) -> TokenPair:
     if stored is None or stored.user_id != int(claims["sub"]):
         raise unauthorized()
     if stored.revoked_at is not None:
-        # A spent token came back: assume it leaked and end every session of this user.
+        if not sessions.is_live(db, stored.session_id):
+            # The session is over (signed out, or ended by a password change): its device is only
+            # finding out. There is nothing left in it for anyone to have taken.
+            raise unauthorized()
+        # A spent token came back while its session goes on, so two parties hold the session:
+        # assume it leaked and end every session of this user.
         _revoke_all(db, stored.user_id)
         owner = db.scalars(select(User.username).where(User.id == stored.user_id)).one_or_none()
         record_login(db, request, "sessions_revoked", owner or "", stored.user_id)
@@ -262,6 +267,23 @@ def my_sessions(
         for t in tokens
     ]
     return Page(items=items, total=total, page=params.page, page_size=params.page_size)
+
+
+@router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def end_my_session(
+    session_id: str,
+    request: Request,
+    user: User = Depends(get_current_user_row),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Sign out one of the caller's own sessions (it may be the one asking)."""
+    if not sessions.end(db, user.id, session_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    record_activity(
+        db, request, user.id, "sign_out", "session", user.id, "Signed out one of their sessions"
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/me/profile", response_model=MeOut)
@@ -365,6 +387,7 @@ def push_subscribe(
     body: PushSubscribe,
     request: Request,
     user: User = Depends(get_current_user_row),
+    session_id: str | None = Depends(get_session_id),
     db: Session = Depends(get_db),
 ) -> Response:
     """Allow this browser to notify the caller. Idempotent; a browser that was subscribed as someone
@@ -379,6 +402,7 @@ def push_subscribe(
         row = PushSubscription(endpoint=body.endpoint, endpoint_hash=digest)
         db.add(row)
     row.user_id = user.id
+    row.session_id = session_id
     row.p256dh, row.auth = body.keys.p256dh, body.keys.auth
     row.user_agent = (request.headers.get("user-agent") or "")[:255] or None
     record_activity(db, request, user.id, "subscribe", "push", user.id, "Turned on notifications")

@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import login_limits, security
+from app import login_limits, security, sessions
 from app.audit import record_activity
 from app.authz import AuthUser, check_assignable_groups, forbidden, require, scope
 from app.clock import utcnow
@@ -289,6 +289,25 @@ def unlock_user(
     record_activity(db, request, caller.id, "unlock", "user", user.id, f"Unlocked user {user.username}")
     db.commit()
     log.info("user %s unlocked by user %s", user.id, caller.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{user_id}/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def end_user_session(
+    user_id: int,
+    session_id: str,
+    request: Request,
+    caller: AuthUser = Depends(require("users", "update")),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Sign out one session of a user."""
+    user = get_scoped(db, caller, user_id)
+    if not sessions.end(db, user.id, session_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    summary = f"Signed out a session of user {user.username}"
+    record_activity(db, request, caller.id, "sign_out", "session", user.id, summary)
+    db.commit()
+    log.info("a session of user %s ended by user %s", user.id, caller.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -108,3 +108,54 @@ test("the signed-in tab lists each session with who, which device and where from
   await userEvent.type(screen.getByRole("searchbox", { name: "Search logs" }), "ana");
   await waitFor(() => expect(asked.at(-1)!.searchParams.get("q")).toBe("ana"));
 });
+
+const theirs = {
+  id: "abc", user_id: 7, username: "ana", name: "Ana Cruz", ip: "10.0.0.7", current: false,
+  user_agent: null, signed_in_at: "2026-11-01T08:00:00", last_active_at: "2026-11-09T08:00:00",
+};
+
+test("an admin can sign someone's session out, after asking", async () => {
+  stub();
+  let items = [theirs];
+  const ended: string[] = [];
+  server.use(
+    http.get("*/api/logs/sessions", () => HttpResponse.json(page(items))),
+    http.delete("*/api/users/:user/sessions/:id", ({ params }) => {
+      ended.push(`${params.user}/${params.id}`);
+      items = [];
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  await open("/logs?tab=sessions");
+  const row = (await screen.findByText("Ana Cruz")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Sign out" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("Ana Cruz");
+  expect(ended).toEqual([]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByText("Nobody is signed in.")).toBeInTheDocument();
+  expect(ended).toEqual(["7/abc"]);
+});
+
+test("an auditor sees who is signed in but cannot sign anyone out", async () => {
+  stub();
+  server.use(http.get("*/api/logs/sessions", () => HttpResponse.json(page([theirs]))));
+  signIn("auditor");
+  renderApp("/logs?tab=sessions");
+  const row = (await screen.findByText("Ana Cruz")).closest("tr")!;
+  expect(within(row).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+});
+
+test("signing out your own session from the log goes to the sign-in page", async () => {
+  stub();
+  server.use(
+    http.get("*/api/logs/sessions", () => HttpResponse.json(page([{ ...theirs, current: true }]))),
+    http.post("*/api/auth/logout", () => new HttpResponse(null, { status: 204 })),
+  );
+  await open("/logs?tab=sessions");
+  const row = (await screen.findByText("Ana Cruz")).closest("tr")!;
+  expect(within(row).getByText("This device")).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Sign out" }));
+  await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+});

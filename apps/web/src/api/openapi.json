@@ -1733,6 +1733,10 @@
       },
       "SignedInOut": {
         "properties": {
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1790,7 +1794,8 @@
           "last_active_at",
           "user_id",
           "username",
-          "name"
+          "name",
+          "current"
         ],
         "title": "SignedInOut",
         "type": "object"
@@ -2601,6 +2606,47 @@
           }
         ],
         "summary": "My Sessions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/me/sessions/{session_id}": {
+      "delete": {
+        "description": "Sign out one of the caller's own sessions (it may be the one asking).",
+        "operationId": "end_my_session_auth_me_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End My Session",
         "tags": [
           "auth"
         ]
@@ -4246,6 +4292,56 @@
           }
         ],
         "summary": "Update User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{user_id}/sessions/{session_id}": {
+      "delete": {
+        "description": "Sign out one session of a user.",
+        "operationId": "end_user_session_users__user_id__sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End User Session",
         "tags": [
           "users"
         ]

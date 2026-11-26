@@ -13,7 +13,7 @@
 --  * Whoever sends deletes the row on success, and deletes the subscription when the push service
 --    says it is gone (404 or 410); the rows of a deleted subscription go with it.
 --
--- The API's own migrations create these tables (alembic 0016 and 0017); the API's
+-- The API's own migrations create these tables (alembic 0016, 0017 and 0020); the API's
 -- tests/test_notifier_contract.py fails if its tables and this file drift apart. `user_id` is a
 -- foreign key to the API's `users` table there; here it is only a column, since users are not part
 -- of the contract.
@@ -27,6 +27,7 @@ CREATE TABLE push_subscription (
   auth varchar(255) NOT NULL,
   user_agent varchar(255) DEFAULT NULL,
   created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  session_id varchar(32) DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_push_subscription_endpoint_hash (endpoint_hash),
   KEY ix_push_subscription_user_id (user_id)

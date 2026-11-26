@@ -40,6 +40,8 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
     )
+    # the session that turned notifications on; signing it out deletes the subscription
+    session_id: Mapped[str | None] = mapped_column(String(32))
 
 
 class PushOutbox(Base):

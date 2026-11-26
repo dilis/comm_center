@@ -1,10 +1,14 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { api, errorMessage, unwrap } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type Column } from "@/components/DataTable";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchBox } from "@/components/SearchBox";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { useListParams } from "@/lib/useListParams";
@@ -16,7 +20,7 @@ type Activity = components["schemas"]["ActivityOut"];
 type SignIn = components["schemas"]["LoginOut"];
 type SignedIn = components["schemas"]["SignedInOut"];
 
-const ACTIONS = ["create", "update", "delete", "send", "send_bulk", "reply", "unlock", "change_password"];
+const ACTIONS = ["create", "update", "delete", "send", "send_bulk", "reply", "unlock", "change_password", "sign_out"];
 const EVENTS = ["login", "login_failed", "login_blocked", "logout", "sessions_revoked"];
 const EVENT_VARIANT: Record<string, "success" | "warning" | "destructive" | "secondary"> = {
   login: "success", login_failed: "warning", login_blocked: "destructive", logout: "secondary", sessions_revoked: "destructive",
@@ -39,7 +43,16 @@ const signInColumns: Column<SignIn>[] = [
 ];
 
 const signedInColumns: Column<SignedIn>[] = [
-  { id: "who", header: "Person", cell: (s) => <span title={s.username}>{s.name}</span> },
+  {
+    id: "who",
+    header: "Person",
+    cell: (s) => (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span title={s.username}>{s.name}</span>
+        {s.current && <Badge variant="success">This device</Badge>}
+      </span>
+    ),
+  },
   {
     id: "device",
     header: "Device",
@@ -51,6 +64,9 @@ const signedInColumns: Column<SignedIn>[] = [
 ];
 
 export default function LogsPage() {
+  const { can, logout } = useAuth();
+  const queryClient = useQueryClient();
+  const [ending, setEnding] = useState<SignedIn | null>(null);
   const list = useListParams({ sort: "created_at", order: "desc", filters: ["tab", "q", "action"] });
   const { q, action } = list.filters;
   const tab = (["logins", "sessions"] as const).find((t) => t === list.filters.tab) ?? "activity";
@@ -89,6 +105,32 @@ export default function LogsPage() {
       ),
     placeholderData: keepPreviousData,
   });
+
+  const end = useMutation({
+    mutationFn: (s: SignedIn) =>
+      unwrap(
+        api.DELETE("/users/{user_id}/sessions/{session_id}", {
+          params: { path: { user_id: s.user_id, session_id: s.id } },
+        }),
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["logs"] }),
+  });
+  // Seeing the list takes logs:read_all; ending someone's session takes users:update.
+  const sessionColumns: Column<SignedIn>[] = can("users:update")
+    ? [
+        ...signedInColumns,
+        {
+          id: "actions",
+          header: "",
+          hideLabelOnMobile: true,
+          cell: (s) => (
+            <Button variant="outline" size="sm" onClick={() => setEnding(s)}>
+              Sign out
+            </Button>
+          ),
+        },
+      ]
+    : signedInColumns;
 
   const switchTab = (value: string) => {
     list.setFilters({ tab: value === "activity" ? "" : value, q: "", action: "" });
@@ -137,7 +179,7 @@ export default function LogsPage() {
           {...shared}
           sort={undefined}
           label="Signed in"
-          columns={signedInColumns}
+          columns={sessionColumns}
           rows={signedIn.data?.items}
           total={signedIn.data?.total ?? 0}
           isLoading={signedIn.isPending}
@@ -168,6 +210,20 @@ export default function LogsPage() {
           error={logins.error ? errorMessage(logins.error) : null}
           emptyMessage="No sign-ins recorded."
           getRowId={(e) => e.id}
+        />
+      )}
+      {ending && (
+        <ConfirmDialog
+          title="Sign out session"
+          description={
+            ending.current
+              ? "Sign out of this device?"
+              : `Sign out ${ending.name} on ${describeDevice(ending.user_agent)}? It stops getting notifications at once, and may keep working for a few minutes before it asks to sign in again.`
+          }
+          confirmLabel="Sign out"
+          // your own session takes the ordinary way out, which also tidies up the browser
+          onConfirm={ending.current ? logout : () => end.mutateAsync(ending)}
+          onClose={() => setEnding(null)}
         />
       )}
     </>

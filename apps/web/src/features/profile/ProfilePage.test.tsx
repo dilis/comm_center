@@ -91,3 +91,61 @@ test("lists where you are signed in and marks this device", async () => {
   const other = within(table).getByText("Unknown device").closest("tr")!;
   expect(within(other).queryByText("This device")).not.toBeInTheDocument();
 });
+
+const FIREFOX = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
+const CHROME = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
+const times = { ip: "10.0.0.7", signed_in_at: "2026-11-01T08:00:00", last_active_at: "2026-11-09T08:00:00" };
+
+/** Two sessions, this one and a phone; ending one removes it from the list. */
+function twoSessions() {
+  let items = [
+    { ...times, id: "here", current: true, user_agent: FIREFOX },
+    { ...times, id: "phone", current: false, user_agent: CHROME },
+  ];
+  const ended: string[] = [];
+  server.use(
+    http.get("*/api/auth/me/sessions", () => HttpResponse.json(page(items))),
+    http.delete("*/api/auth/me/sessions/:id", ({ params }) => {
+      ended.push(String(params.id));
+      items = items.filter((s) => s.id !== params.id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.post("*/api/auth/logout", () => new HttpResponse(null, { status: 204 })),
+  );
+  return ended;
+}
+
+const rowOf = async (device: string) => (await screen.findByText(device)).closest("tr")!;
+
+test("another session can be signed out, after asking", async () => {
+  const ended = twoSessions();
+  await open();
+  await userEvent.click(within(await rowOf("Chrome on Android")).getByRole("button", { name: "Sign out" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("Chrome on Android");
+  expect(ended).toEqual([]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
+  await waitFor(() => expect(screen.queryByText("Chrome on Android")).not.toBeInTheDocument());
+  expect(ended).toEqual(["phone"]);
+  expect(screen.getByRole("heading", { name: "My profile" })).toBeInTheDocument(); // still here
+});
+
+test("signing out this device goes to the sign-in page", async () => {
+  const ended = twoSessions();
+  await open();
+  await userEvent.click(within(await rowOf("Firefox on Linux")).getByRole("button", { name: "Sign out" }));
+  await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  expect(ended).toEqual([]); // the ordinary sign-out, which also tidies up this browser
+  expect(localStorage.getItem("cc.refresh")).toBeNull();
+});
+
+test("a session that could not be signed out says why", async () => {
+  twoSessions();
+  server.use(http.delete("*/api/auth/me/sessions/:id", () => HttpResponse.json({ detail: "session not found" }, { status: 404 })));
+  await open();
+  await userEvent.click(within(await rowOf("Chrome on Android")).getByRole("button", { name: "Sign out" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("session not found");
+});

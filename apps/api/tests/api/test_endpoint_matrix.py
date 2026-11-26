@@ -32,6 +32,7 @@ ALLOWED = {
     "PUT /users/{u}": {"admin"},
     "DELETE /users/{u}": {"admin"},
     "POST /users/{u}/unlock": {"admin"},
+    "DELETE /users/{u}/sessions/{s}": {"admin"},
     "GET /groups": {"admin"},
     "GET /devices": {"admin", "operator", "auditor"},
     "GET /logs/activity": {"admin", "auditor"},
@@ -55,6 +56,7 @@ def call(client, endpoint, headers, contact_id, user_id, message_id):
         path.replace("{c}", str(contact_id))
         .replace("{u}", str(user_id))
         .replace("{m}", str(message_id))
+        .replace("{s}", "no-such-session")
     )
     body = None
     if endpoint == "POST /contacts":
@@ -84,7 +86,10 @@ def test_role_against_endpoint(client, conn, role, endpoint):
     # inbound, so all four roles can read it and a 403 can only be the permission
     message = make_message(conn, victim_contact, owner_id=make_inbound_agent(conn))
     r = call(client, endpoint, auth_header(client, "caller"), victim_contact, victim_user, message)
-    if role in ALLOWED[endpoint]:
+    if role in ALLOWED[endpoint] and endpoint.endswith("/{s}"):
+        # there is no such session: "authorized, nothing to end"
+        assert (r.status_code, r.json()["detail"]) == (404, "session not found"), (role, r.text)
+    elif role in ALLOWED[endpoint]:
         # the matrix message is a received one, which cannot be retried: 422 is "authorized, wrong kind"
         passed = r.status_code == 422 if endpoint.endswith("/retry") else r.status_code < 400
         assert passed, (role, endpoint, r.status_code, r.text)

@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { api, setSessionExpiredHandler, unwrap } from "@/api/client";
 import type { components } from "@/api/schema";
-import { dropForSignOut } from "@/push/push";
+import { dropForSignOut, forgetSubscription } from "@/push/push";
 
 import { canActOnRow, canAny, canDeleteMessage, hasPermission, type PermissionSet } from "./permissions";
 import { clearSession, getRefreshToken, refreshSession, setSession } from "./tokens";
@@ -42,7 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("anonymous");
   }, [queryClient]);
 
-  useEffect(() => setSessionExpiredHandler(endSession), [endSession]);
+  useEffect(
+    () =>
+      setSessionExpiredHandler(() => {
+        void forgetSubscription();
+        endSession();
+      }),
+    [endSession],
+  );
 
   // Restore a session on load. Refreshing is single-flight, so React StrictMode's double effect
   // cannot spend the same rotating refresh token twice.
@@ -53,7 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("loading");
       const result = await refreshSession();
       if (cancelled) return;
-      if (result === "denied") return setStatus("anonymous");
+      if (result === "denied") {
+        void forgetSubscription();
+        return setStatus("anonymous");
+      }
       if (result === "error") return setStatus("error");
       try {
         const profile = await unwrap(api.GET("/auth/me"));
