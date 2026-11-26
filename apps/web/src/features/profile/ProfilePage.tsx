@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { NotificationsSection } from "./NotificationsSection";
+import { SessionsSection } from "./SessionsSection";
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -247,6 +248,12 @@ export default function ProfilePage() {
           <NotificationsSection />
         </Section>
       )}
+      <Section
+        title="Sessions"
+        description="Where you are signed in. A session stays listed until it is signed out, even if the browser is closed."
+      >
+        <SessionsSection />
+      </Section>
       <Section title="Password" description="Changing your password signs you out everywhere, including here.">
         <PasswordForm onChanged={() => void logout()} />
       </Section>

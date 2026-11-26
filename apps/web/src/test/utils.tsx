@@ -74,6 +74,8 @@ export function emptyBackend() {
     http.get("*/api/devices", () => HttpResponse.json([])),
     http.get("*/api/logs/activity", () => HttpResponse.json(page([]))),
     http.get("*/api/logs/logins", () => HttpResponse.json(page([]))),
+    http.get("*/api/logs/sessions", () => HttpResponse.json(page([]))),
+    http.get("*/api/auth/me/sessions", () => HttpResponse.json(page([]))),
   );
 }
 

@@ -144,6 +144,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/me/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Sessions
+         * @description Where the caller is signed in, most recently active first.
+         */
+        get: operations["my_sessions_auth_me_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/refresh": {
         parameters: {
             query?: never;
@@ -310,6 +330,27 @@ export interface paths {
          * @description Sign-in history, newest first. ``q`` matches the username typed or the address.
          */
         get: operations["list_logins_logs_logins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logs/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description Who is signed in now: one item per session, most recently active first. ``q`` matches the
+         *     username or the address.
+         */
+        get: operations["list_sessions_logs_sessions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1028,6 +1069,27 @@ export interface components {
             /** Unread */
             unread: boolean;
         };
+        /** MySessionOut */
+        MySessionOut: {
+            /** Current */
+            current: boolean;
+            /** Id */
+            id: string;
+            /** Ip */
+            ip: string | null;
+            /**
+             * Last Active At
+             * Format: date-time
+             */
+            last_active_at: string;
+            /**
+             * Signed In At
+             * Format: date-time
+             */
+            signed_in_at: string;
+            /** User Agent */
+            user_agent: string | null;
+        };
         /** Page[ActivityOut] */
         Page_ActivityOut_: {
             /** Items */
@@ -1076,6 +1138,28 @@ export interface components {
         Page_MessageOut_: {
             /** Items */
             items: components["schemas"]["MessageOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[MySessionOut] */
+        Page_MySessionOut_: {
+            /** Items */
+            items: components["schemas"]["MySessionOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[SignedInOut] */
+        Page_SignedInOut_: {
+            /** Items */
+            items: components["schemas"]["SignedInOut"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -1216,6 +1300,31 @@ export interface components {
             protocol_version: number;
             /** Version */
             version: string;
+        };
+        /** SignedInOut */
+        SignedInOut: {
+            /** Id */
+            id: string;
+            /** Ip */
+            ip: string | null;
+            /**
+             * Last Active At
+             * Format: date-time
+             */
+            last_active_at: string;
+            /** Name */
+            name: string;
+            /**
+             * Signed In At
+             * Format: date-time
+             */
+            signed_in_at: string;
+            /** User Agent */
+            user_agent: string | null;
+            /** User Id */
+            user_id: number;
+            /** Username */
+            username: string;
         };
         /** Skipped */
         Skipped: {
@@ -1621,6 +1730,38 @@ export interface operations {
             };
         };
     };
+    my_sessions_auth_me_sessions_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_MySessionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     refresh_auth_refresh_post: {
         parameters: {
             query?: never;
@@ -1983,6 +2124,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_LoginOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_logs_sessions_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SignedInOut_"];
                 };
             };
             /** @description Validation Error */

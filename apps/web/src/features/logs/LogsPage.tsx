@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { useListParams } from "@/lib/useListParams";
+import { describeDevice } from "@/lib/userAgent";
 import type { components } from "@/api/schema";
 import { formatDateTime } from "@/lib/utils";
 
 type Activity = components["schemas"]["ActivityOut"];
 type SignIn = components["schemas"]["LoginOut"];
+type SignedIn = components["schemas"]["SignedInOut"];
 
 const ACTIONS = ["create", "update", "delete", "send", "send_bulk", "reply", "unlock", "change_password"];
 const EVENTS = ["login", "login_failed", "login_blocked", "logout", "sessions_revoked"];
@@ -36,10 +38,22 @@ const signInColumns: Column<SignIn>[] = [
   { id: "ip", header: "Address", cell: (e) => e.ip },
 ];
 
+const signedInColumns: Column<SignedIn>[] = [
+  { id: "who", header: "Person", cell: (s) => <span title={s.username}>{s.name}</span> },
+  {
+    id: "device",
+    header: "Device",
+    cell: (s) => <span className="break-all" title={s.user_agent ?? undefined}>{describeDevice(s.user_agent)}</span>,
+  },
+  { id: "ip", header: "Address", cell: (s) => s.ip ?? "Unknown" },
+  { id: "signed_in", header: "Signed in", cell: (s) => formatDateTime(s.signed_in_at) },
+  { id: "active", header: "Last active", cell: (s) => formatDateTime(s.last_active_at) },
+];
+
 export default function LogsPage() {
   const list = useListParams({ sort: "created_at", order: "desc", filters: ["tab", "q", "action"] });
   const { q, action } = list.filters;
-  const tab = list.filters.tab === "logins" ? "logins" : "activity";
+  const tab = (["logins", "sessions"] as const).find((t) => t === list.filters.tab) ?? "activity";
 
   const activity = useQuery({
     queryKey: ["logs", "activity", list.page, list.pageSize, q, action],
@@ -64,6 +78,18 @@ export default function LogsPage() {
     placeholderData: keepPreviousData,
   });
 
+  const signedIn = useQuery({
+    queryKey: ["logs", "sessions", list.page, list.pageSize, q],
+    enabled: tab === "sessions",
+    queryFn: () =>
+      unwrap(
+        api.GET("/logs/sessions", {
+          params: { query: { page: list.page, page_size: list.pageSize, q: q || undefined } },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
+
   const switchTab = (value: string) => {
     list.setFilters({ tab: value === "activity" ? "" : value, q: "", action: "" });
   };
@@ -83,6 +109,7 @@ export default function LogsPage() {
           items={[
             { value: "activity", label: "Activity" },
             { value: "logins", label: "Sign-ins" },
+            { value: "sessions", label: "Signed in" },
           ]}
         />
         <SearchBox
@@ -91,19 +118,34 @@ export default function LogsPage() {
           value={q}
           onChange={(v) => list.setFilter("q", v)}
         />
-        <label className="flex items-center gap-2 text-sm">
-          {tab === "activity" ? "Action" : "Event"}
-          <Select className="w-44" value={action} onChange={(e) => list.setFilter("action", e.target.value)}>
-            <option value="">All</option>
-            {(tab === "activity" ? ACTIONS : EVENTS).map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </Select>
-        </label>
+        {tab !== "sessions" && (
+          <label className="flex items-center gap-2 text-sm">
+            {tab === "activity" ? "Action" : "Event"}
+            <Select className="w-44" value={action} onChange={(e) => list.setFilter("action", e.target.value)}>
+              <option value="">All</option>
+              {(tab === "activity" ? ACTIONS : EVENTS).map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
       </div>
-      {tab === "activity" ? (
+      {tab === "sessions" ? (
+        <DataTable
+          {...shared}
+          sort={undefined}
+          label="Signed in"
+          columns={signedInColumns}
+          rows={signedIn.data?.items}
+          total={signedIn.data?.total ?? 0}
+          isLoading={signedIn.isPending}
+          error={signedIn.error ? errorMessage(signedIn.error) : null}
+          emptyMessage="Nobody is signed in."
+          getRowId={(s) => s.id}
+        />
+      ) : tab === "activity" ? (
         <DataTable
           {...shared}
           label="Activity"

@@ -1,9 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
 import { server } from "@/test/server";
-import { emptyBackend, renderApp, signIn } from "@/test/utils";
+import { emptyBackend, page, renderApp, signIn } from "@/test/utils";
 
 const profile = { first_name: "Test", middle_name: null, last_name: "User", email: "t@example.com" };
 
@@ -69,4 +69,25 @@ test("changing the password signs the person out", async () => {
   await userEvent.type(screen.getByLabelText("Confirm new password"), "a new long password");
   await userEvent.click(screen.getByRole("button", { name: "Change password" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument());
+});
+
+test("lists where you are signed in and marks this device", async () => {
+  const session = { ip: "10.0.0.7", signed_in_at: "2026-11-01T08:00:00", last_active_at: "2026-11-09T08:00:00" };
+  server.use(
+    http.get("*/api/auth/me/sessions", () =>
+      HttpResponse.json(
+        page([
+          { ...session, id: "a", current: true, user_agent: "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0" },
+          { ...session, id: "b", current: false, user_agent: null, ip: null },
+        ]),
+      ),
+    ),
+  );
+  await open();
+  const table = await screen.findByRole("table", { name: "Sessions" });
+  const here = (await within(table).findByText("Firefox on Linux")).closest("tr")!;
+  expect(within(here).getByText("This device")).toBeInTheDocument();
+  expect(within(here).getByText("10.0.0.7")).toBeInTheDocument();
+  const other = within(table).getByText("Unknown device").closest("tr")!;
+  expect(within(other).queryByText("This device")).not.toBeInTheDocument();
 });

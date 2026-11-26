@@ -388,6 +388,13 @@ Still open:
 - **Access:** new permission `logs:read_all` in a `logs_viewer` block included by `admin` and `auditor` (so an operator can no longer assign `auditor`, by the escalation rule). `GET /logs/activity` (filters `user_id`, `action`, `resource`, `q`) and `GET /logs/logins` (`user_id`, `event`, `q`), newest first; shown on the **Logs** page. Entries of deleted users still show their name.
 - **Follow-up `[OPEN]`:** no retention or pruning yet; no date-range filter; the worker's sends are visible only as messages.
 
+### Signed-in sessions (addition)
+
+- **A session is one sign-in `[DECIDED]`:** migration `0019` adds `session_id`, `signed_in_at`, `ip` and `user_agent` to `refresh_token`. Rotation carries `session_id` and `signed_in_at` over; `ip`, `user_agent` and `created_at` (shown as "last active") are those of the latest sign-in or refresh. Any number of sessions per user is allowed. Tokens from before the migration become one session each, with no device or address, and their `signed_in_at` is the last refresh.
+- **"Signed in" means** holding a refresh token that is neither revoked nor expired, not that the app is open. With the 10-year lifetime, a browser that was closed or wiped without signing out stays listed. "Last active" moves only on a refresh, so it can lag by the access token lifetime.
+- **Endpoints:** `GET /auth/me/sessions` (own sessions, `current` taken from the access token's `sid` claim, which is not used to authenticate) and `GET /logs/sessions` (`logs:read_all`; one item per session, not per user; `q` matches username or address; people who are deleted, deactivated or not allowed to sign in are left out). Shown on **My profile** and the **Signed in** tab of **Logs**.
+- **Follow-up `[OPEN]`:** no way yet to end one session or another user's sessions from the lists.
+
 ### Sending to many contacts (addition after Phase 6)
 
 - **Queue order `[DECIDED]`:** a single send or a reply goes out before any queued bulk message, singles in the order they were posted, bulk in the order created. The message being sent is never interrupted. Bulk messages carry `messages.is_bulk` (set once, migration `0018`); the claim orders by `is_bulk, created_at, id` through `ix_messages_queue` (without that index the sort locks every queued row and starves other claimers under `SKIP LOCKED`). A person's retry keeps the message's original `is_bulk`.

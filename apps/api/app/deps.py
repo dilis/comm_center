@@ -23,6 +23,20 @@ def can_log_in(user: User | None) -> bool:
     )
 
 
+def get_session_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str | None:
+    """The session the caller's access token belongs to. Only for telling the caller which session
+    is theirs: it is not what authenticates (use ``get_current_user``), and a token issued before
+    sessions were recorded has none."""
+    if credentials is None:
+        raise unauthorized()
+    try:
+        return security.decode_token(credentials.credentials, "access").get("sid")
+    except security.TokenError:
+        raise unauthorized() from None
+
+
 def get_current_user_row(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),

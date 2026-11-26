@@ -36,6 +36,7 @@ ALLOWED = {
     "GET /devices": {"admin", "operator", "auditor"},
     "GET /logs/activity": {"admin", "auditor"},
     "GET /logs/logins": {"admin", "auditor"},
+    "GET /logs/sessions": {"admin", "auditor"},
     "GET /messages": {"admin", "operator", "agent", "auditor"},
     "GET /messages/counts": {"admin", "operator", "agent", "auditor"},
     "POST /messages/send": {"admin", "operator", "agent"},

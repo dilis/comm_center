@@ -79,3 +79,32 @@ test("a failed request is reported", async () => {
   await open();
   expect(await screen.findByText("boom")).toBeInTheDocument();
 });
+
+test("the signed-in tab lists each session with who, which device and where from", async () => {
+  stub();
+  const asked: URL[] = [];
+  server.use(
+    http.get("*/api/logs/sessions", ({ request }) => {
+      asked.push(new URL(request.url));
+      return HttpResponse.json(
+        page([
+          {
+            id: "abc", user_id: 7, username: "ana", name: "Ana Cruz", ip: "10.0.0.7",
+            user_agent: "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+            signed_in_at: "2026-11-01T08:00:00", last_active_at: "2026-11-09T08:00:00",
+          },
+        ]),
+      );
+    }),
+  );
+  await open();
+  expect(asked).toHaveLength(0);
+  await userEvent.click(screen.getByRole("tab", { name: "Signed in" }));
+  const row = (await screen.findByText("Ana Cruz")).closest("tr")!;
+  expect(within(row).getByText("Firefox on Linux")).toBeInTheDocument();
+  expect(within(row).getByText("10.0.0.7")).toBeInTheDocument();
+  // there is nothing to filter by but the search
+  expect(screen.queryByRole("combobox", { name: /Action|Event/ })).not.toBeInTheDocument();
+  await userEvent.type(screen.getByRole("searchbox", { name: "Search logs" }), "ana");
+  await waitFor(() => expect(asked.at(-1)!.searchParams.get("q")).toBe("ana"));
+});

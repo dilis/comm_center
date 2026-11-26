@@ -34,11 +34,15 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
 
 
-def create_token(user_id: int, kind: TokenKind, ttl_seconds: int) -> tuple[str, str]:
-    """Return ``(token, jti)``."""
+def create_token(
+    user_id: int, kind: TokenKind, ttl_seconds: int, session_id: str | None = None
+) -> tuple[str, str]:
+    """Return ``(token, jti)``. ``session_id`` is added as the ``sid`` claim."""
     now = int(time.time())
     jti = uuid.uuid4().hex
     claims = {"sub": str(user_id), "typ": kind, "iat": now, "exp": now + ttl_seconds, "jti": jti}
+    if session_id:
+        claims["sid"] = session_id
     return jwt.encode(claims, settings.jwt_secret, algorithm=ALGORITHM), jti
 
 

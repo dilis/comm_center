@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -6,15 +7,22 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app import login_limits, push, security
+from app import login_limits, push, security, sessions
 from app.audit import client_ip, record_activity, record_login
 from app.authz import AuthUser
 from app.clock import utcnow
 from app.config import settings
 from app.contact_ops import replace_phones as replace_contact_phones
 from app.db import get_db
-from app.deps import can_log_in, get_current_user, get_current_user_row, unauthorized
+from app.deps import (
+    can_log_in,
+    get_current_user,
+    get_current_user_row,
+    get_session_id,
+    unauthorized,
+)
 from app.models import Contact, ContactPhone, PushSubscription, RefreshToken, User
+from app.pagination import Page, PageParams, paginate
 from app.schemas import PartialNameParts, PhoneIn, PhoneOut
 
 log = logging.getLogger(__name__)
@@ -76,13 +84,24 @@ def _user_id_of(db: Session, username: str) -> int | None:
     return db.scalars(select(User.id).where(User.username == username)).one_or_none()
 
 
-def _issue_tokens(db: Session, user_id: int) -> TokenPair:
-    access, _ = security.create_token(user_id, "access", settings.access_token_ttl_seconds)
+def _issue_tokens(
+    db: Session, user_id: int, request: Request, rotating: RefreshToken | None = None
+) -> TokenPair:
+    """A new pair: a new session, or the continuation of the one ``rotating`` belongs to."""
+    session_id = rotating.session_id if rotating else uuid.uuid4().hex
+    access, _ = security.create_token(
+        user_id, "access", settings.access_token_ttl_seconds, session_id
+    )
     refresh, jti = security.create_token(user_id, "refresh", settings.refresh_token_ttl_seconds)
     db.add(
         RefreshToken(
             jti=jti,
             user_id=user_id,
+            session_id=session_id,
+            # left unset for a new session, so that the database fills it in
+            **({"signed_in_at": rotating.signed_in_at} if rotating else {}),
+            ip=client_ip(request),
+            user_agent=(request.headers.get("user-agent") or "")[:255] or None,
             expires_at=utcnow() + timedelta(seconds=settings.refresh_token_ttl_seconds),
         )
     )
@@ -121,7 +140,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
     record_login(db, request, "login", user.username, user.id)
     login_limits.forget_failures(db, login_limits.LOGIN, key)  # commits the log row too
-    return _issue_tokens(db, user.id)
+    return _issue_tokens(db, user.id, request)
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -161,7 +180,7 @@ def _rotate(db: Session, refresh_token: str, request: Request) -> TokenPair:
     if not can_log_in(user):
         raise unauthorized()
     stored.revoked_at = utcnow()
-    return _issue_tokens(db, user.id)
+    return _issue_tokens(db, user.id, request, rotating=stored)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -222,6 +241,27 @@ def read_me(
     db: Session = Depends(get_db),
 ) -> MeOut:
     return _me(db, user, auth)
+
+
+class MySessionOut(sessions.SessionOut):
+    current: bool  # the session making this request
+
+
+@router.get("/me/sessions", response_model=Page[MySessionOut])
+def my_sessions(
+    params: PageParams = Depends(),
+    user: User = Depends(get_current_user_row),
+    session_id: str | None = Depends(get_session_id),
+    db: Session = Depends(get_db),
+) -> Page[MySessionOut]:
+    """Where the caller is signed in, most recently active first."""
+    stmt = sessions.live_tokens().where(RefreshToken.user_id == user.id)
+    tokens, total = paginate(db, stmt, params, *sessions.ORDER)
+    items = [
+        MySessionOut(**sessions.session_fields(t), current=t.session_id == session_id)
+        for t in tokens
+    ]
+    return Page(items=items, total=total, page=params.page, page_size=params.page_size)
 
 
 @router.patch("/me/profile", response_model=MeOut)

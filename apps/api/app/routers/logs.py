@@ -1,4 +1,4 @@
-"""Read-only views of the activity log and the login log (``logs:read_all``)."""
+"""Read-only views of the activity log, the login log and who is signed in (``logs:read_all``)."""
 
 from datetime import datetime
 
@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app import sessions
 from app.authz import AuthUser, require
 from app.db import get_db
-from app.models import ActivityLog, Contact, LoginLog, User
+from app.models import ActivityLog, Contact, LoginLog, RefreshToken, User
 from app.pagination import Page, PageParams, paginate
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -113,3 +114,40 @@ def list_logins(
         items=[LoginOut.model_validate(e, from_attributes=True) for e in entries],
         total=total, page=params.page, page_size=params.page_size,
     )
+
+
+class SignedInOut(sessions.SessionOut):
+    user_id: int
+    username: str
+    name: str
+
+
+@router.get("/sessions", response_model=Page[SignedInOut])
+def list_sessions(
+    q: str | None = None,
+    params: PageParams = Depends(),
+    _: AuthUser = Depends(require("logs", "read_all")),
+    db: Session = Depends(get_db),
+) -> Page[SignedInOut]:
+    """Who is signed in now: one item per session, most recently active first. ``q`` matches the
+    username or the address."""
+    # Only people who could still use their session: a deactivated user's tokens are not revoked.
+    able = select(_USERS.c.id).where(
+        _USERS.c.deleted_at.is_(None), _USERS.c.is_active, _USERS.c.login_enabled
+    )
+    stmt = sessions.live_tokens().where(RefreshToken.user_id.in_(able))
+    if q:
+        by_name = select(_USERS.c.id).where(_USERS.c.username.contains(q, autoescape=True))
+        stmt = stmt.where(
+            or_(RefreshToken.ip.contains(q, autoescape=True), RefreshToken.user_id.in_(by_name))
+        )
+    tokens, total = paginate(db, stmt, params, *sessions.ORDER)
+    people = _people(db, {t.user_id for t in tokens})
+    items = [
+        SignedInOut(
+            **sessions.session_fields(t), user_id=t.user_id,
+            username=people[t.user_id][0], name=people[t.user_id][1],
+        )
+        for t in tokens
+    ]  # fmt: skip
+    return Page(items=items, total=total, page=params.page, page_size=params.page_size)
