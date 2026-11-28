@@ -83,6 +83,8 @@ export default function MessagesPage() {
   // "<unread>/<total>" for the tabs that hold received messages.
   const hasUnread = (counts.data?.unread ?? 0) > 0;
   const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
+  // "<queued>/<all outgoing>" for the Sent tab.
+  const queuedOf = counts.data && `${counts.data.queued}/${counts.data.sent}`;
   // The server returns newest first; each request fetches the next older slice. The page shows
   // them oldest first, so the newest message is at the bottom.
   const query = useInfiniteQuery({
@@ -361,7 +363,7 @@ export default function MessagesPage() {
           onChange={(v) => list.setFilter("direction", v === "all" ? "" : v)}
           items={[
             { value: "all", label: "All", count: unreadOf(counts.data?.all), attention: hasUnread },
-            { value: "sent", label: "Sent", icon: <SentArrow />, count: counts.data?.sent },
+            { value: "sent", label: "Sent", icon: <SentArrow />, count: queuedOf },
             { value: "received", label: "Received", icon: <ReceivedArrow />, count: unreadOf(counts.data?.received), attention: hasUnread },
           ]}
         />

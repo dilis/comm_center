@@ -921,6 +921,8 @@ export interface components {
         Counts: {
             /** All */
             all: number;
+            /** Queued */
+            queued: number;
             /** Received */
             received: number;
             /** Sent */

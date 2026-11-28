@@ -91,7 +91,8 @@ class BulkSendResult(BaseModel):
 
 class Counts(BaseModel):
     all: int
-    sent: int
+    sent: int  # every outbound message, whatever its status
+    queued: int  # outbound messages still waiting to be sent
     received: int
     unread: int  # received messages the caller has not read yet
 
@@ -239,11 +240,13 @@ def message_counts(
         stmt = by_direction(base, direction)
         return db.scalar(select(func.count()).select_from(stmt.subquery()))
 
+    queued = by_direction(base, "sent").where(Message.status == "queued")
     read = select(MessageRead.message_id).where(MessageRead.user_id == caller.id)
     unread = by_direction(base, "received").where(Message.id.not_in(read))
     return Counts(
         all=count("all"),
         sent=count("sent"),
+        queued=db.scalar(select(func.count()).select_from(queued.subquery())),
         received=count("received"),
         unread=db.scalar(select(func.count()).select_from(unread.subquery())),
     )

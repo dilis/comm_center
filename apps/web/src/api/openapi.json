@@ -484,6 +484,10 @@
             "title": "All",
             "type": "integer"
           },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
           "received": {
             "title": "Received",
             "type": "integer"
@@ -500,6 +504,7 @@
         "required": [
           "all",
           "sent",
+          "queued",
           "received",
           "unread"
         ],

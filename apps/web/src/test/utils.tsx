@@ -66,7 +66,7 @@ export function signIn(role: Role | string[] = "admin", overrides: Record<string
 export function emptyBackend() {
   server.use(
     http.post("*/api/messages/:id/read", () => new HttpResponse(null, { status: 204 })),
-    http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, received: 0, unread: 0 })),
+    http.get("*/api/messages/counts", () => HttpResponse.json({ all: 0, sent: 0, queued: 0, received: 0, unread: 0 })),
     http.get("*/api/messages", () => HttpResponse.json(page([]))),
     http.get("*/api/contacts", () => HttpResponse.json(page([]))),
     http.get("*/api/users", () => HttpResponse.json(page([]))),
