@@ -84,7 +84,7 @@ export default function MessagesPage() {
     refetchInterval: (state) => (state.state.data?.queued ? POLL.pendingMs : POLL.idleMs),
     refetchOnWindowFocus: true,
   });
-  // "<unread>/<total>" for the tabs that hold received messages.
+  // "<unread>/<total>" for the Received tab.
   const hasUnread = (counts.data?.unread ?? 0) > 0;
   const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
   // "<queued>/<outgoing that left the queue>" for the Sent tab.
@@ -369,7 +369,7 @@ export default function MessagesPage() {
           value={direction}
           onChange={(v) => list.setFilter("direction", v === "all" ? "" : v)}
           items={[
-            { value: "all", label: "All", count: unreadOf(counts.data?.all), attention: hasUnread },
+            { value: "all", label: "All", count: counts.data?.all, attention: hasUnread },
             { value: "sent", label: "Sent", icon: <SentArrow />, count: queuedOf },
             { value: "received", label: "Received", icon: <ReceivedArrow />, count: unreadOf(counts.data?.received), attention: hasUnread },
           ]}

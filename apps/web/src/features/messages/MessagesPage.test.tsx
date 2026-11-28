@@ -139,7 +139,7 @@ describe("list", () => {
     const tab = (name: string) => screen.getByRole("tab", { name });
     expect(tab("Sent 1/2").querySelector("svg.lucide-arrow-up-right")).not.toBeNull();
     expect(tab("Received 1/1").querySelector("svg.lucide-arrow-down-left")).not.toBeNull();
-    expect(tab("All 1/3").querySelector("svg")).toBeNull();
+    expect(tab("All 3").querySelector("svg")).toBeNull();
   });
 
   test("fetches the newest slice first, on the All tab", async () => {
@@ -208,10 +208,10 @@ describe("list", () => {
     expect(await screen.findByText("slice 3 row 0")).toBeInTheDocument();
   });
 
-  test("All and Received show unread out of total, Sent shows queued out of total", async () => {
+  test("All shows its total, Received unread out of total, Sent queued out of total", async () => {
     backend([out, incoming], { all: 12, sent: 7, queued: 1, received: 5, unread: 3 });
     await open();
-    expect(await screen.findByRole("tab", { name: "All 3/12" })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "All 12" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Received 3/5" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Sent 1/7" })).toBeInTheDocument();
   });
@@ -219,7 +219,7 @@ describe("list", () => {
   test("the All and Received tabs stand out while something is unread, and calm down when not", async () => {
     backend([out, incoming], { all: 12, sent: 7, queued: 1, received: 5, unread: 3 });
     await open();
-    expect(await screen.findByRole("tab", { name: "All 3/12" })).toHaveAttribute("data-attention", "true");
+    expect(await screen.findByRole("tab", { name: "All 12" })).toHaveAttribute("data-attention", "true");
     expect(screen.getByRole("tab", { name: "Received 3/5" })).toHaveAttribute("data-attention", "true");
     expect(screen.getByRole("tab", { name: "Sent 1/7" })).not.toHaveAttribute("data-attention");
   });
@@ -227,14 +227,14 @@ describe("list", () => {
   test("nothing is highlighted when everything has been read", async () => {
     backend([out, incoming], { all: 12, sent: 7, queued: 1, received: 5, unread: 0 });
     await open();
-    expect(await screen.findByRole("tab", { name: "All 0/12" })).not.toHaveAttribute("data-attention");
+    expect(await screen.findByRole("tab", { name: "All 12" })).not.toHaveAttribute("data-attention");
     expect(screen.getByRole("tab", { name: "Received 0/5" })).not.toHaveAttribute("data-attention");
   });
 
   test("tabs show scoped counts and switch the direction", async () => {
     backend();
     await open();
-    expect(await screen.findByRole("tab", { name: "All 1/3" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: "All 3" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Sent 1/2" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "Received 1/1" }));
     await waitFor(() => expect(lastQuery()).toMatchObject({ direction: "received", page: "1" }));
@@ -398,7 +398,7 @@ describe("live updates", () => {
     arrived = true;
     expect(await screen.findByText("hi from Ana")).toBeInTheDocument();
     expect(await screen.findByRole("tab", { name: "Received 1/1" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "All 1/2" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "All 2" })).toBeInTheDocument();
   });
 
   test("the page, filters and tab you chose are kept across refreshes", async () => {
