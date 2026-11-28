@@ -258,9 +258,23 @@ describe("list", () => {
     await waitFor(() => expect(lastQuery()).toMatchObject({ q: "ana", status: "failed", page: "1" }));
   });
 
+  test("the All tab dates a sent message by when it was sent, falling back to when it was created", async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString().replace("Z", "");
+    const wentLater = { ...out, id: 30, content: "waited its turn", created_at: hoursAgo(5), sent_at: hoursAgo(2) };
+    const unsent = { ...failed, id: 31, content: "never left", created_at: hoursAgo(3), sent_at: null };
+    backend([wentLater, unsent]);
+    await open();
+    const row = (text: string) => within(screen.getByText(text).closest<HTMLElement>("[role='listitem']")!);
+    await screen.findByText("waited its turn");
+    expect(row("waited its turn").getByText("2 hours ago")).toHaveAttribute("datetime", wentLater.sent_at);
+    expect(row("never left").getByText("3 hours ago")).toBeInTheDocument();
+    row("waited its turn").getByText("2 hours ago").focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(formatDateTime(wentLater.sent_at));
+  });
+
   test("dates in the table are humanized, with the exact time in a tooltip on hover", async () => {
-    const recent = { ...out, id: 20, content: "just sent", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
-    backend([recent, { ...out, id: 21, content: "ancient", created_at: "2020-01-02T03:04:05" }]);
+    const recent = { ...out, id: 20, content: "just sent", sent_at: null, created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
+    backend([recent, { ...out, id: 21, content: "ancient", sent_at: null, created_at: "2020-01-02T03:04:05" }]);
     await open();
     const row = (await screen.findByText("just sent")).closest<HTMLElement>("tr, [role='listitem']")!;
     await userEvent.hover(within(row).getByText("5 minutes ago"));
@@ -270,7 +284,7 @@ describe("list", () => {
   });
 
   test("the tooltip waits for the pointer to rest, so passing by shows nothing", async () => {
-    const recent = { ...out, id: 23, content: "passing by", created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
+    const recent = { ...out, id: 23, content: "passing by", sent_at: null, created_at: new Date(Date.now() - 5 * 60_000).toISOString().replace("Z", "") };
     backend([recent]);
     await open();
     const date = within((await screen.findByText("passing by")).closest<HTMLElement>("tr, [role='listitem']")!).getByText("5 minutes ago");
@@ -280,7 +294,7 @@ describe("list", () => {
   });
 
   test("the exact time is also reachable from the keyboard", async () => {
-    const recent = { ...out, id: 22, content: "tab to me", created_at: new Date(Date.now() - 2 * 3_600_000).toISOString().replace("Z", "") };
+    const recent = { ...out, id: 22, content: "tab to me", sent_at: null, created_at: new Date(Date.now() - 2 * 3_600_000).toISOString().replace("Z", "") };
     backend([recent]);
     await open();
     const row = (await screen.findByText("tab to me")).closest<HTMLElement>("tr, [role='listitem']")!;

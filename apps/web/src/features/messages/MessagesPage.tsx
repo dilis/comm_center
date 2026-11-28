@@ -174,6 +174,14 @@ export default function MessagesPage() {
   }, [fresh]);
   const isNew = (m: Message) => m.unread || (fresh.get(m.id) ?? 0) > Date.now();
   const view = (message: Message) => setDialog({ kind: "view", message });
+  // Humanized for scanning; the exact time is on hover and in the message's details.
+  const timeOf = (at: string) => (
+    <Tip content={formatDateTime(at)}>
+      <time dateTime={at} tabIndex={0} className="cursor-default underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
+        {formatRelative(at)}
+      </time>
+    </Tip>
+  );
 
   const columns: Column<Message>[] = [
     {
@@ -235,14 +243,7 @@ export default function MessagesPage() {
     {
       id: "date",
       header: "Date",
-            // Humanized for scanning; the exact time is on hover and in the message's details.
-      cell: (m) => (
-        <Tip content={formatDateTime(m.created_at)}>
-          <time dateTime={m.created_at} tabIndex={0} className="cursor-default underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
-            {formatRelative(m.created_at)}
-          </time>
-        </Tip>
-      ),
+      cell: (m) => timeOf(m.created_at),
     },
     {
       id: "actions",
@@ -333,7 +334,8 @@ export default function MessagesPage() {
               {m.reply_to_id != null && <div className={cn("text-xs", soft)}>Reply to #{m.reply_to_id}</div>}
               <p className={cn("whitespace-pre-wrap break-words", isNew(m) && "font-semibold")}>{m.content}</p>
               <div className={cn("flex flex-wrap items-center gap-2 text-xs", soft)}>
-                {cellOf("date", m)}
+                {/* When it was sent (only sent messages have that time), else when it was created. */}
+                {timeOf(m.sent_at ?? m.created_at)}
                 {mine && <Badge variant={STATUS_VARIANT[m.status]}>{m.status}</Badge>}
               </div>
               {m.error_message && <div className={cn("break-words text-xs", mine ? "font-medium text-red-100" : "text-destructive")}>{m.error_message}</div>}
