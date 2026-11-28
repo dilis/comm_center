@@ -405,7 +405,8 @@ export interface paths {
         };
         /**
          * Message Counts
-         * @description Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the caller's read scope.
+         * @description Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the
+         *     caller's read scope. Queued messages are counted only in ``queued``, not in the totals.
          */
         get: operations["message_counts_messages_counts_get"];
         put?: never;
@@ -2250,6 +2251,7 @@ export interface operations {
                 status?: ("queued" | "sending" | "sent" | "failed" | "delivered" | "received") | null;
                 contact_id?: number | null;
                 reply_to_id?: number | null;
+                exclude_queued?: boolean;
                 q?: string | null;
                 order?: "asc" | "desc";
                 page?: number;

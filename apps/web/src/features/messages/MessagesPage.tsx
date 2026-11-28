@@ -70,25 +70,29 @@ export default function MessagesPage() {
   const canReply = (m: Message) => m.direction === "inbound" && can("messages:create");
   // Only a sent message that failed, or that the phone has not confirmed yet, can be put back in the queue.
   const canRetry = (m: Message) => m.direction === "outbound" && (m.status === "failed" || m.status === "sent") && can("messages:create");
-  const { q, status } = list.filters;
+  const { q } = list.filters;
   const direction: Direction = list.filters.direction === "sent" || list.filters.direction === "received" ? list.filters.direction : "all";
+  // The All tab leaves queued messages out, and the Received tab has no statuses to choose from.
+  const statuses = direction === "all" ? STATUSES.filter((s) => s !== "queued") : direction === "sent" ? STATUSES : [];
+  const status = statuses.find((s) => s === list.filters.status) ?? "";
 
   const counts = useQuery({
     queryKey: ["messages", "counts"],
     queryFn: () => unwrap(api.GET("/messages/counts")),
     placeholderData: keepPreviousData,
-    refetchInterval: POLL.idleMs, // new messages change the tab numbers too
+    // New messages change the tab numbers too, and the queue drains while the worker sends.
+    refetchInterval: (state) => (state.state.data?.queued ? POLL.pendingMs : POLL.idleMs),
     refetchOnWindowFocus: true,
   });
   // "<unread>/<total>" for the tabs that hold received messages.
   const hasUnread = (counts.data?.unread ?? 0) > 0;
   const unreadOf = (total: number | undefined) => (total === undefined || counts.data === undefined ? undefined : `${counts.data.unread}/${total}`);
-  // "<queued>/<all outgoing>" for the Sent tab.
+  // "<queued>/<outgoing that left the queue>" for the Sent tab.
   const queuedOf = counts.data && `${counts.data.queued}/${counts.data.sent}`;
   // The server returns newest first; each request fetches the next older slice. The page shows
   // them oldest first, so the newest message is at the bottom.
   const query = useInfiniteQuery({
-    queryKey: ["messages", "list", q, direction === "received" ? "" : status, direction],
+    queryKey: ["messages", "list", q, status, direction],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       unwrap(
@@ -100,7 +104,8 @@ export default function MessagesPage() {
               page_size: FEED_PAGE_SIZE,
               order: "desc",
               q: q || undefined,
-              status: (direction === "received" ? undefined : status || undefined) as Status | undefined,
+              status: status || undefined,
+              exclude_queued: direction === "all" || undefined,
             },
           },
         }),
@@ -110,7 +115,9 @@ export default function MessagesPage() {
     // Keep checking: quickly while something is still being sent (statuses change every few
     // seconds), and slowly otherwise so received messages appear without a reload. Background
     // tabs pause, and coming back to the tab refreshes at once.
-    refetchInterval: (state) => (state.state.data?.pages.some((p) => p.items.some(pending)) ? POLL.pendingMs : POLL.idleMs),
+    // A queued message hidden from the All tab still counts: it appears there once it is picked up.
+    refetchInterval: (state) =>
+      state.state.data?.pages.some((p) => p.items.some(pending)) || counts.data?.queued ? POLL.pendingMs : POLL.idleMs,
     refetchOnWindowFocus: true,
   });
   const rows = useMemo(() => {
@@ -376,7 +383,7 @@ export default function MessagesPage() {
           onClick={() => setFiltersOpen((o) => !o)}
         >
           <SlidersHorizontal className="h-4 w-4" aria-hidden />
-          {!filtersOpen && (q || (direction !== "received" && status)) && (
+          {!filtersOpen && (q || status) && (
             <span role="img" aria-label="Filters active" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-sky-600" />
           )}
         </Button>
@@ -386,7 +393,7 @@ export default function MessagesPage() {
           Status
           <Select className="w-36" value={status} onChange={(e) => list.setFilter("status", e.target.value)}>
             <option value="">All</option>
-            {STATUSES.map((s) => (
+            {statuses.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -414,7 +421,7 @@ export default function MessagesPage() {
           hasMore: !!query.hasNextPage,
           isLoadingMore: query.isFetchingNextPage,
           onLoadMore: () => void query.fetchNextPage(),
-          resetKey: `${direction}|${q}|${direction === "received" ? "" : status}`,
+          resetKey: `${direction}|${q}|${status}`,
         }}
       />
       {dialog?.kind === "new" && <SendMessageDialog onClose={() => setDialog(null)} />}

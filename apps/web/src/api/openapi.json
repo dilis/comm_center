@@ -3559,6 +3559,16 @@
           },
           {
             "in": "query",
+            "name": "exclude_queued",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Queued",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -3646,7 +3656,7 @@
     },
     "/messages/counts": {
       "get": {
-        "description": "Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the caller's read scope.",
+        "description": "Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the\ncaller's read scope. Queued messages are counted only in ``queued``, not in the totals.",
         "operationId": "message_counts_messages_counts_get",
         "responses": {
           "200": {

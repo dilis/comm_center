@@ -91,7 +91,7 @@ class BulkSendResult(BaseModel):
 
 class Counts(BaseModel):
     all: int
-    sent: int  # every outbound message, whatever its status
+    sent: int  # outbound messages that have left the queue
     queued: int  # outbound messages still waiting to be sent
     received: int
     unread: int  # received messages the caller has not read yet
@@ -197,6 +197,7 @@ def list_messages(
     status: Status | None = None,
     contact_id: int | None = None,
     reply_to_id: int | None = None,
+    exclude_queued: bool = False,
     q: str | None = None,
     order: SortOrder = "desc",
     params: PageParams = Depends(),
@@ -206,6 +207,8 @@ def list_messages(
     stmt = by_direction(scope(select(Message), caller, "messages"), direction)
     if status:
         stmt = stmt.where(Message.status == status)
+    if exclude_queued:
+        stmt = stmt.where(Message.status != "queued")
     if contact_id is not None:
         stmt = stmt.where(Message.contact_id == contact_id)
     if reply_to_id is not None:
@@ -233,11 +236,12 @@ def list_messages(
 def message_counts(
     caller: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> Counts:
-    """Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the caller's read scope."""
+    """Badge numbers for the All / Sent / Received tabs, plus the caller's unread total, under the
+    caller's read scope. Queued messages are counted only in ``queued``, not in the totals."""
     base = scope(select(Message.id), caller, "messages")
 
     def count(direction: Literal["all", "sent", "received"]) -> int:
-        stmt = by_direction(base, direction)
+        stmt = by_direction(base, direction).where(Message.status != "queued")
         return db.scalar(select(func.count()).select_from(stmt.subquery()))
 
     queued = by_direction(base, "sent").where(Message.status == "queued")

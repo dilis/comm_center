@@ -413,6 +413,41 @@ describe("live updates", () => {
     expect(screen.getByRole("searchbox", { name: "Search messages" })).toHaveValue("ana");
   });
 
+  test("only the All tab asks to leave queued messages out", async () => {
+    backend();
+    await open();
+    await screen.findByText("hello Ana");
+    expect(lastQuery()).toMatchObject({ direction: "all", exclude_queued: "true" });
+    await userEvent.click(screen.getByRole("tab", { name: /Sent/ }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ direction: "sent" }));
+    expect(lastQuery()).not.toHaveProperty("exclude_queued");
+  });
+
+  test("the All tab does not offer, or send, the queued status filter", async () => {
+    backend();
+    await open("admin", "/messages?status=queued");
+    await screen.findByText("hello Ana");
+    expect(within(screen.getByLabelText("Status")).queryByRole("option", { name: "queued" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toHaveValue("");
+    expect(lastQuery()).not.toHaveProperty("status");
+    await userEvent.click(screen.getByRole("tab", { name: /Sent/ }));
+    await waitFor(() => expect(lastQuery()).toMatchObject({ direction: "sent", status: "queued" }));
+    expect(within(screen.getByLabelText("Status")).getByRole("option", { name: "queued" })).toBeInTheDocument();
+  });
+
+  test("while something is queued, a message hidden from All shows up soon after it leaves the queue", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/messages/counts", () =>
+        HttpResponse.json(calls < 3 ? { all: 0, sent: 0, queued: 1, received: 0, unread: 0 } : { all: 1, sent: 1, queued: 0, received: 0, unread: 0 }),
+      ),
+      http.get("*/api/messages", () => HttpResponse.json(page(++calls < 3 ? [] : [out]))),
+    );
+    await open();
+    expect(await screen.findByText("hello Ana")).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Sent 0/1" })).toBeInTheDocument();
+  });
+
   test("a queued message is refreshed until the worker has sent it", async () => {
     let calls = 0;
     server.use(

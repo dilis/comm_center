@@ -99,7 +99,7 @@ def test_counts_carry_the_callers_own_unread_total(client, conn, world):
     def counts(who):
         return client.get("/messages/counts", headers=auth_header(client, who)).json()
 
-    assert counts("admin1") == {"all": 3, "sent": 1, "queued": 1, "received": 2, "unread": 2}
+    assert counts("admin1") == {"all": 2, "sent": 0, "queued": 1, "received": 2, "unread": 2}
     client.post(f"/messages/{world['incoming']}/read", headers=auth_header(client, "admin1"))
     assert counts("admin1")["unread"] == 1
     assert counts("op1")["unread"] == 2  # someone else's reading does not count for them

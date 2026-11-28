@@ -158,7 +158,7 @@ def test_direction_tabs(client, h, mailbox):
 
 
 def test_counts_per_tab_follow_the_scope(client, h, mailbox, conn):
-    assert client.get("/messages/counts", headers=h).json() == {"all": 6, "sent": 4, "queued": 3, "received": 2, "unread": 2}
+    assert client.get("/messages/counts", headers=h).json() == {"all": 3, "sent": 1, "queued": 3, "received": 2, "unread": 2}
     make_login_user(conn, "ag", "agent")
     mine = make_message(
         conn,
@@ -167,7 +167,7 @@ def test_counts_per_tab_follow_the_scope(client, h, mailbox, conn):
     )
     assert mine
     counts = client.get("/messages/counts", headers=auth_header(client, "ag")).json()
-    assert counts == {"all": 3, "sent": 1, "queued": 1, "received": 2, "unread": 2}
+    assert counts == {"all": 2, "sent": 0, "queued": 1, "received": 2, "unread": 2}
 
 
 def test_filters_search_sort_and_pagination(client, h, mailbox, ana):
@@ -192,7 +192,15 @@ def test_deleted_messages_are_hidden_from_list_and_counts(client, h, mailbox, co
     soft_delete(conn, "messages", mailbox["mine1"])
     body, ids = listed(client, h)
     assert mailbox["mine1"] not in ids and body["total"] == 5
-    assert client.get("/messages/counts", headers=h).json()["all"] == 5
+    assert client.get("/messages/counts", headers=h).json()["queued"] == 2
+    soft_delete(conn, "messages", mailbox["mine2"])
+    assert client.get("/messages/counts", headers=h).json()["all"] == 2
+
+
+def test_queued_messages_can_be_left_out_of_the_list(client, h, mailbox):
+    body, ids = listed(client, h, "exclude_queued=true")
+    assert ids == {mailbox[k] for k in ("mine2", "in1", "in2")} and body["total"] == 3
+    assert listed(client, h)[0]["total"] == 6  # only when asked: reply lists keep queued ones
 
 
 def test_messages_of_a_deleted_user_are_still_listed(client, h, mailbox, conn):
